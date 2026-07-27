@@ -1,0 +1,245 @@
+/* ==========================================================================
+   样式第 1 节：设计变量
+   --------------------------------------------------------------------------
+   下面这些 --xxx 是 CSS 变量，后面所有样式都引用它们，不写死颜色。
+   想换配色只需要改这里，全站自动跟着变，不用一处处去找。
+   用法：color: var(--ink) 就是取 --ink 这个变量的值。
+   ========================================================================== */
+:root{
+  --bg:#F2F4F7;        /* 页面底色，浅灰 */
+  --card:#FFFFFF;      /* 卡片底色，纯白 */
+  --card-2:#F8FAFC;    /* 卡片内的次级底色，比如表头、悬停行 */
+
+  --ink:#0F1723;       /* 主文字色，接近黑 */
+  --ink2:#54606F;      /* 次级文字，说明性文案 */
+  --ink3:#8892A0;      /* 弱化文字，标签、时间戳 */
+
+  --line:#DFE4EA;      /* 分隔线、边框 */
+  --line2:#C7CFD9;     /* 稍深的边框，用于输入框、按钮 */
+
+  --brand:#1F4E8C;     /* 主色，深蓝。金融系统常用色，用于主按钮和强调 */
+  --brand-soft:#E8EFF8;/* 主色的浅色底，用于高亮背景 */
+  --brand-ink:#163A69; /* 主色加深，用于悬停 */
+
+  --ok:#15704A;   --ok-soft:#E4F2EB;    /* 绿：通过、已核验、低风险 */
+  --warn:#9A6209; --warn-soft:#FBF0DC;  /* 黄：待处理、缺失、中风险 */
+  --bad:#A8291F;  --bad-soft:#FAE9E7;   /* 红：拒绝、异常、高风险 */
+
+  /* 等宽字体：所有编号、金额、分数都用它，数字对齐好看，也是金融系统的惯例 */
+  --mono: ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+  /* 正文字体：优先用系统自带的中文字体，不加载网络字体，保证离线可用 */
+  --sans: -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+/* ==========================================================================
+   样式第 2 节：基础排版
+   ========================================================================== */
+*{box-sizing:border-box}  /* 让 padding 和 border 算进宽度里，布局才好算 */
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.6}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
+a{color:var(--brand)}
+/* .mono 用在数字上。tabular-nums 让每个数字等宽，表格里上下对齐 */
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ==========================================================================
+   样式第 3 节：顶部固定区域
+   --------------------------------------------------------------------------
+   .demobar 是深色警示条，写明"这是测试数据"。任务书要求页面必须标注，别删。
+   .appbar  是导航栏，放系统名、当前登录身份、切换角色和重置按钮。
+   ========================================================================== */
+.demobar{background:#2B2118;color:#F2E4D2;font-size:12px;padding:6px 20px;letter-spacing:.02em}
+.appbar{background:var(--card);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.appbar .brand{font-weight:600;font-size:15px}
+.appbar .who{font-size:12px;color:var(--ink2);background:var(--card-2);border:1px solid var(--line);padding:3px 10px;border-radius:20px}
+.appbar .spacer{flex:1}  /* 弹性占位，把它右边的元素推到最右 */
+.wrap{max-width:1320px;margin:0 auto;padding:24px 20px 80px}  /* 内容区，居中且限宽 */
+
+/* ==========================================================================
+   样式第 4 节：按钮
+   --------------------------------------------------------------------------
+   .btn 是基础样式，后面加修饰类改变颜色：
+      .pri  主按钮（深蓝）   .ok  批准（绿）
+      .warn 补件（黄）       .bad 拒绝（红）
+      .sm   小号按钮
+   ========================================================================== */
+.btn{font-family:inherit;font-size:13px;padding:8px 16px;border-radius:6px;border:1px solid var(--line2);background:var(--card);color:var(--ink);cursor:pointer;line-height:1.4}
+.btn:hover{border-color:var(--ink3)}
+/* :focus-visible 只在键盘 Tab 聚焦时显示轮廓，鼠标点击不显示。无障碍需要 */
+.btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.pri:hover{background:var(--brand-ink)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.warn{background:var(--warn);border-color:var(--warn);color:#fff}
+.btn.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.42;cursor:not-allowed}  /* 禁用态，比如备注没填时的确认按钮 */
+.btnrow{display:flex;gap:10px;flex-wrap:wrap}  /* 一排按钮的容器 */
+
+/* ==========================================================================
+   样式第 5 节：卡片与文字辅助类
+   ========================================================================== */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px}
+.card+.card{margin-top:16px}  /* 相邻两张卡片之间自动留间距 */
+.card h2{margin-bottom:4px}
+.sub{color:var(--ink2);font-size:13px}    /* 说明性文案 */
+.muted{color:var(--ink3);font-size:12px}  /* 更弱的辅助文字 */
+
+/* ==========================================================================
+   样式第 6 节：表单控件
+   ========================================================================== */
+label.f{display:block;margin-bottom:14px}                      /* 一个表单项 */
+label.f span{display:block;font-size:12px;color:var(--ink2);margin-bottom:5px}  /* 字段标题 */
+input,select{font-family:inherit;font-size:14px;width:100%;padding:8px 10px;border:1px solid var(--line2);border-radius:6px;background:var(--card)}
+input:focus,select:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:var(--brand)}
+input[readonly]{background:var(--card-2);color:var(--ink2)}    /* 只读字段变灰，比如"核实收入" */
+textarea{font-family:inherit;font-size:14px;width:100%;padding:10px;border:1px solid var(--line2);border-radius:6px;min-height:76px;resize:vertical}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}          /* 两列布局 */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px}    /* 三列布局 */
+/* 窄屏（手机、分屏）时自动变成一列，否则会挤成一团 */
+@media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+
+/* ==========================================================================
+   样式第 7 节：表格
+   --------------------------------------------------------------------------
+   用于申请列表、案件队列、审计记录。表头用小号大写字母，是中台系统的惯例。
+   ========================================================================== */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:hover{background:var(--card-2)}  /* 鼠标悬停高亮整行 */
+
+/* ==========================================================================
+   样式第 8 节：状态标签
+   --------------------------------------------------------------------------
+   小圆角色块，用来显示"已提交""高风险""已核验"这类状态。
+   颜色对应含义：灰=中性  蓝=进行中  绿=通过  黄=待办  红=拒绝
+   ========================================================================== */
+.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid transparent;white-space:nowrap}
+.t-gray{background:#EEF1F4;color:#4A5563} .t-blue{background:var(--brand-soft);color:var(--brand-ink)}
+.t-ok{background:var(--ok-soft);color:var(--ok)} .t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+
+/* ==========================================================================
+   样式第 9 节：统计卡片（审批工作台顶部那四个大数字）
+   ========================================================================== */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+@media(max-width:820px){.stats{grid-template-columns:1fr 1fr}}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.stat .n{font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.02em}  /* 大数字 */
+.stat .l{font-size:12px;color:var(--ink2)}  /* 下面那行小标题 */
+
+/* ==========================================================================
+   样式第 10 节：五步申请表的步骤条
+   --------------------------------------------------------------------------
+   .on   当前所在步骤（蓝底）
+   .done 已完成的步骤（绿底）
+   都不加就是未到达的步骤（灰底）
+   ========================================================================== */
+.steps{display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap}
+.steps div{flex:1;min-width:110px;font-size:12px;padding:8px 10px;border-radius:6px;background:var(--card-2);color:var(--ink3);border:1px solid var(--line)}
+.steps div.on{background:var(--brand-soft);color:var(--brand-ink);border-color:#B9CEE6;font-weight:500}
+.steps div.done{color:var(--ok);border-color:#C3DFD2;background:var(--ok-soft)}
+
+/* ==========================================================================
+   样式第 11 节：时间线（申请人查看进度的那条竖线）
+   --------------------------------------------------------------------------
+   原理：给每个 li 加左边框当竖线，再用 ::before 伪元素画圆点。
+   .done 圆点填绿  .now 圆点填蓝（表示正在这一步）
+   ========================================================================== */
+.tl{list-style:none;padding:0;margin:0}
+.tl li{position:relative;padding:0 0 20px 26px;border-left:2px solid var(--line);margin-left:6px}
+.tl li:last-child{border-left-color:transparent;padding-bottom:0}  /* 最后一个不画竖线 */
+.tl li::before{content:"";position:absolute;left:-7px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--card);border:2px solid var(--line2)}
+.tl li.done::before{background:var(--ok);border-color:var(--ok)}
+.tl li.now::before{background:var(--brand);border-color:var(--brand)}
+.tl b{display:block;font-weight:500}
+
+/* ==========================================================================
+   样式第 12 节：案件详情三栏布局
+   --------------------------------------------------------------------------
+   这是全站最核心的页面。三栏在视觉上必须明确分开，因为它们代表三种不同性质
+   的信息：客观事实 / 系统检查 / 模型判断与人工结论。这是评分要求。
+   右栏稍宽（1.05fr），因为要放评分条形图和决定按钮。
+   ========================================================================== */
+.cols{display:grid;grid-template-columns:1fr 1fr 1.05fr;gap:16px;align-items:start}
+@media(max-width:1100px){.cols{grid-template-columns:1fr}}  /* 窄屏改为上下堆叠 */
+.col{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.colhd{padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card-2)}  /* 栏头 */
+.colhd b{font-size:13px} .colhd em{font-style:normal;font-size:11px;color:var(--ink3);display:block}
+.colbd{padding:16px}  /* 栏内容 */
+
+/* ==========================================================================
+   样式第 13 节：资信档案的字段行
+   --------------------------------------------------------------------------
+   .frow  一个字段（左栏里每一条）
+   .frow.hl  高亮态。点击右栏的风险因素时，对应的证据字段会加上这个类。
+   .chip  字段下方的小标记：来源 / 核验状态 / 更新时间 / 是否进模型
+          .chip.ok  绿色，表示"已核验"或"进入模型"
+          .chip.ref 米色，表示"仅供核验"（该字段不参与风险评分）
+   ========================================================================== */
+.fgroup{margin-bottom:18px}
+.fgroup>b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px}
+.frow{padding:8px 10px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;background:var(--card)}
+.frow.hl{border-color:var(--brand);background:var(--brand-soft)}
+.frow .k{font-size:12px;color:var(--ink2)}   /* 字段名 */
+.frow .v{font-weight:500}                    /* 字段值 */
+.chips{margin-top:4px;display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-size:10px;padding:1px 7px;border-radius:4px;background:#EEF1F4;color:#5B6675;border:1px solid var(--line)}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:#C3DFD2}
+.chip.ref{background:#F4F0E8;color:#7A6741;border-color:#E4DACA}
+
+/* ==========================================================================
+   样式第 14 节：检查项（中栏的一行行核对结果）
+   ========================================================================== */
+.chk{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.chk:last-child{border-bottom:none}
+
+/* ==========================================================================
+   样式第 15 节：风险分与贡献度条形图
+   --------------------------------------------------------------------------
+   .score 是那个大数字（0-100）。
+   .bar   是每个风险因素一条横条，宽度代表它对总分的贡献。可点击。
+   这是"可解释 AI"的核心呈现：让人一眼看出分数是由哪几项加出来的。
+   ========================================================================== */
+.score{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.score .n{font-family:var(--mono);font-size:42px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.bar{margin-bottom:9px;cursor:pointer}
+.bar .lb{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px}  /* 名称 + 分值 */
+.bar .track{height:7px;background:#EDF0F3;border-radius:4px;overflow:hidden}           /* 灰色轨道 */
+.bar .fill{height:100%;background:var(--brand);border-radius:4px}                      /* 蓝色填充 */
+.bar:hover .lb{color:var(--brand)}
+
+/* ==========================================================================
+   样式第 16 节：提示框与其他零碎
+   --------------------------------------------------------------------------
+   .note      普通提示（蓝色左边线）
+   .note.warn 警告（黄色）
+   .note.bad  严重（红色）
+   .hr.thick  加粗分隔线，专门用来在右栏分开"模型判断"和"人工决定"
+   ========================================================================== */
+.note{background:var(--card-2);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:0 6px 6px 0;padding:11px 14px;font-size:13px;color:var(--ink2);margin:14px 0}
+.note.warn{border-left-color:var(--warn);background:var(--warn-soft);color:#6E4706}
+.note.bad{border-left-color:var(--bad);background:var(--bad-soft);color:#7C1E16}
+.hr{height:1px;background:var(--line);margin:18px 0}
+.hr.thick{height:2px;background:var(--line2);margin:20px 0}
+.center{text-align:center}
+
+/* 首页专用 */
+.hero{max-width:660px;margin:60px auto;text-align:center}
+.hero h1{font-size:30px;margin-bottom:12px}
+.rolecards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:32px}
+@media(max-width:700px){.rolecards{grid-template-columns:1fr}}
+.rolecard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:26px 20px;cursor:pointer;text-align:left}
+.rolecard:hover{border-color:var(--brand)}
+.rolecard b{display:block;font-size:16px;margin-bottom:6px}
+.rolecard{font:inherit;color:inherit;width:100%}
+.rolecard span:last-child{display:block;color:var(--ink2);font-size:13px;line-height:1.5}
+.roleicon{display:inline-grid!important;place-items:center;width:34px;height:34px;margin-bottom:14px;border-radius:8px;background:var(--brand-soft);color:var(--brand)!important;font-weight:700}
+.bar{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit}
+.bar .track,.bar .fill{display:block}
+.section-label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
+.consent{display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:13px;color:var(--ink2)}
+
+/* 视觉上隐藏但屏幕阅读器仍可读到的文字，无障碍用 */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
