@@ -105,3 +105,7 @@ To connect a real backend:
 6. Keep `views.js` storage-independent; it should continue to receive data from the application coordinator.
 
 No framework, package manager, bundler, external library, font, or API is required for the current version.
+
+## API configuration
+
+The API adapter uses `window.CAR_LOAN_API_BASE`, falling back to `http://127.0.0.1:8000`; set the global before loading `js/app.js` when a different origin is required. Authentication tokens are kept in `sessionStorage`. After `submitSupplement()`, callers must refetch the application because the backend returns the created supplement rather than the updated application.
