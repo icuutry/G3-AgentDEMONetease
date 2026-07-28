@@ -1,25 +1,44 @@
 import { PRESETS, RULESET_VERSION } from './demo-data.js';
 import * as api from './api.js';
-import {
-  addAudit, findApplication, getAuditLogs, getState, initializeStore, listApplications,
-  persist, resetState, setRole, updateApplication
-} from './store.js';
-import { evaluate, money, n, pct, requiredMissing } from './risk-engine.js';
+import { evaluate, money, pct, requiredMissing } from './risk-engine.js';
 import {
   applicantHomeView, auditView, caseView, formView, homeView, loginView, notFoundView,
   queueView, statusView, supplementView, unauthorizedView
 } from './views.js';
 
 const appRoot = document.getElementById('app');
+let currentUser = null;
 let formStep = 1;
 let activeDraftId = null;
+let activeDraft = null;
 let uploads = [];
 let selectedDecision = null;
+let selectedMockPersona = 'low';
 let queueFilters = { kw: '', status: '', level: '' };
+let applicationsCache = [];
+let auditCache = [];
+const assessmentCache = new Map();
+let suppressNextHashRender = false;
 
-function navigate(route) {
-  location.hash = route;
-  if (location.hash === route) render();
+function clearTemporaryState() {
+  formStep = 1;
+  activeDraftId = null;
+  activeDraft = null;
+  uploads = [];
+  selectedDecision = null;
+  selectedMockPersona = 'low';
+  queueFilters = { kw: '', status: '', level: '' };
+  applicationsCache = [];
+  auditCache = [];
+  assessmentCache.clear();
+}
+
+async function navigate(route) {
+  if (location.hash !== route) {
+    suppressNextHashRender = true;
+    location.hash = route;
+  }
+  await renderSafely();
 }
 
 function routeParts() {
@@ -27,78 +46,209 @@ function routeParts() {
 }
 
 function requireRole(role) {
-  return getState().role === role;
-}
-
-async function render() {
-  const [page = '', id] = routeParts();
-  const state = getState();
-  document.getElementById('who').textContent = state.role
-    ? `Signed in as ${state.role === 'applicant' ? 'Applicant' : 'Loan Officer'}` : 'Not signed in';
-  document.getElementById('ver').textContent = RULESET_VERSION;
-
-  if (!page) appRoot.innerHTML = homeView();
-  else if (page === 'login' && ['applicant', 'officer'].includes(id)) appRoot.innerHTML = loginView(id);
-  else if (page === 'apply-home') appRoot.innerHTML = requireRole('applicant') ? applicantHomeView(await api.listApplications()) : unauthorizedView();
-  else if (page === 'form') {
-    if (!requireRole('applicant')) appRoot.innerHTML = unauthorizedView();
-    else {
-      const application = findApplication(id);
-      if (!application) appRoot.innerHTML = notFoundView();
-      else {
-        if (activeDraftId !== id) { activeDraftId = id; formStep = 1; }
-        appRoot.innerHTML = formView({ app: application, step: formStep, assessment: evaluate(application, listApplications()) });
-      }
-    }
-  } else if (page === 'status') {
-    const application = findApplication(id);
-    appRoot.innerHTML = requireRole('applicant') && application ? statusView(application, getAuditLogs(id)) : requireRole('applicant') ? notFoundView() : unauthorizedView();
-  } else if (page === 'supplement') {
-    const application = findApplication(id);
-    appRoot.innerHTML = requireRole('applicant') && application ? supplementView(application, uploads) : requireRole('applicant') ? notFoundView() : unauthorizedView();
-  } else if (page === 'queue') {
-    if (!requireRole('officer')) appRoot.innerHTML = unauthorizedView();
-    else {
-      const applications = listApplications();
-      const assessments = Object.fromEntries(applications.map(application => [application.id, evaluate(application, applications)]));
-      appRoot.innerHTML = queueView(applications, { ...queueFilters, assessments });
-    }
-  } else if (page === 'case') {
-    const application = findApplication(id);
-    appRoot.innerHTML = requireRole('officer') && application
-      ? caseView(application, evaluate(application, listApplications()), listApplications())
-      : requireRole('officer') ? notFoundView() : unauthorizedView();
-  } else if (page === 'audit') appRoot.innerHTML = requireRole('officer') ? auditView(getAuditLogs()) : unauthorizedView();
-  else appRoot.innerHTML = notFoundView();
-}
-
-function collectApplicationForm() {
-  const form = document.getElementById('application-form');
-  if (!form) return null;
-  const application = findApplication(form.dataset.id);
-  if (!application) return null;
-  const data = new FormData(form);
-  for (const [key, value] of data.entries()) {
-    if (key !== 'consent') application[key] = value;
-  }
-  application.consent = Boolean(form.elements.consent?.checked ?? application.consent);
-  persist();
-  return application;
+  return currentUser?.role === role;
 }
 
 function showMessage(message) {
   window.alert(message);
 }
 
+async function handleError(error) {
+  const message = error instanceof api.ApiError
+    ? error.message
+    : error instanceof Error && error.message
+      ? error.message
+      : 'Something went wrong while contacting the API.';
+  showMessage(message || 'Unable to complete the request.');
+
+  if (error instanceof api.ApiError && error.status === 401) {
+    api.logout();
+    currentUser = null;
+    clearTemporaryState();
+    await navigate('#/');
+  }
+}
+
+async function getApplicationOrNull(applicationId) {
+  try {
+    return await api.getApplication(applicationId);
+  } catch (error) {
+    if (error instanceof api.ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+async function render() {
+  const [page = '', id] = routeParts();
+  document.getElementById('who').textContent = currentUser
+    ? `Signed in as ${currentUser.displayName || (currentUser.role === 'applicant' ? 'Applicant' : 'Loan Officer')}`
+    : 'Not signed in';
+  document.getElementById('ver').textContent = RULESET_VERSION;
+
+  if (!page) {
+    appRoot.innerHTML = homeView();
+  } else if (page === 'login' && ['applicant', 'officer'].includes(id)) {
+    appRoot.innerHTML = loginView(id);
+  } else if (page === 'apply-home') {
+    if (!requireRole('applicant')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      applicationsCache = await api.listApplications();
+      appRoot.innerHTML = applicantHomeView(applicationsCache);
+    }
+  } else if (page === 'form') {
+    if (!requireRole('applicant')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      if (activeDraftId !== id || !activeDraft) {
+        activeDraft = await getApplicationOrNull(id);
+        if (!activeDraft) {
+          appRoot.innerHTML = notFoundView();
+          return;
+        }
+        activeDraftId = id;
+        formStep = 1;
+      }
+      appRoot.innerHTML = formView({
+        app: activeDraft,
+        step: formStep,
+        assessment: evaluate(activeDraft, applicationsCache)
+      });
+    }
+  } else if (page === 'status') {
+    if (!requireRole('applicant')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      const [application, logs] = await Promise.all([
+        getApplicationOrNull(id),
+        api.getAuditLogs(id)
+      ]);
+      if (!application) {
+        appRoot.innerHTML = notFoundView();
+        return;
+      }
+      auditCache = logs;
+      appRoot.innerHTML = statusView(application, logs);
+    }
+  } else if (page === 'supplement') {
+    if (!requireRole('applicant')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      const application = await getApplicationOrNull(id);
+      appRoot.innerHTML = application
+        ? supplementView(application, uploads.map(file => file.name))
+        : notFoundView();
+    }
+  } else if (page === 'queue') {
+    if (!requireRole('officer')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      applicationsCache = await api.listApplications();
+      const assessments = Object.fromEntries(applicationsCache.map(application => [
+        application.id,
+        application.riskAssessment || { level: 'Unassessed', score: '—' }
+      ]));
+      appRoot.innerHTML = queueView(applicationsCache, { ...queueFilters, assessments });
+    }
+  } else if (page === 'case') {
+    if (!requireRole('officer')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      const [application, applications] = await Promise.all([
+        getApplicationOrNull(id),
+        api.listApplications()
+      ]);
+      if (!application) {
+        appRoot.innerHTML = notFoundView();
+        return;
+      }
+      applicationsCache = applications;
+      const assessment = application.riskAssessment
+        || await api.evaluateApplication(application.id, {}, false);
+      assessmentCache.set(application.id, assessment);
+      appRoot.innerHTML = caseView(application, assessment, applications);
+    }
+  } else if (page === 'audit') {
+    if (!requireRole('officer')) {
+      appRoot.innerHTML = unauthorizedView();
+    } else {
+      auditCache = await api.getAuditLogs();
+      appRoot.innerHTML = auditView(auditCache);
+    }
+  } else {
+    appRoot.innerHTML = notFoundView();
+  }
+}
+
+async function renderSafely() {
+  try {
+    await render();
+  } catch (error) {
+    await handleError(error);
+  }
+}
+
+function collectApplicationForm() {
+  const form = document.getElementById('application-form');
+  if (!form || !activeDraft || form.dataset.id !== activeDraft.id) return activeDraft;
+
+  const draft = { ...activeDraft };
+  for (const [key, value] of new FormData(form).entries()) {
+    if (key !== 'consent') draft[key] = value;
+  }
+  const consent = form.elements.consent;
+  if (consent) draft.consent = consent.checked;
+  activeDraft = draft;
+  return activeDraft;
+}
+
+async function saveActiveDraft({ notify = false } = {}) {
+  const draft = collectApplicationForm();
+  if (!draft?.id) return null;
+
+  activeDraft = await api.updateApplication(draft.id, draft);
+  activeDraftId = activeDraft.id;
+  const index = applicationsCache.findIndex(application => application.id === activeDraft.id);
+  if (index >= 0) applicationsCache[index] = activeDraft;
+  if (notify) showMessage('Draft saved.');
+  return activeDraft;
+}
+
+async function retrieveMockData(retrieve, description) {
+  const draft = await saveActiveDraft();
+  if (!draft) return;
+  const response = await retrieve(draft.id, selectedMockPersona);
+  activeDraft = response.application;
+  activeDraftId = activeDraft.id;
+  showMessage(`${description} retrieved from ${response.label || response.provider}.`);
+  await render();
+}
+
 async function handleAction(button) {
   const action = button.dataset.action;
   if (!action) return;
-  if (action === 'navigate') return navigate(button.dataset.route);
-  if (action === 'switch-role') { setRole(null); return navigate('#/'); }
-  if (action === 'reset-demo') {
-    if (!window.confirm('Reset all demo records? Any applications you created will be removed.')) return;
-    resetState(); formStep = 1; activeDraftId = null; uploads = []; selectedDecision = null;
+
+  if (action === 'navigate') {
+    if (routeParts()[0] === 'form' && button.dataset.route === '#/apply-home') {
+      await saveActiveDraft();
+    }
+    return navigate(button.dataset.route);
+  }
+  if (action === 'switch-role') {
+    api.logout();
+    currentUser = null;
+    clearTemporaryState();
     return navigate('#/');
+  }
+  if (action === 'reset-demo') {
+    if (!requireRole('officer')) {
+      return showMessage('Only an authenticated Loan Officer can reset the demo data.');
+    }
+    if (!window.confirm('Reset all demo records? Any applications you created will be removed.')) return;
+    await api.resetDemo();
+    clearTemporaryState();
+    showMessage('Demo records restored.');
+    return navigate('#/queue');
   }
   if (action === 'fill-login') {
     document.querySelector('[name="username"]').value = button.dataset.account;
@@ -106,42 +256,50 @@ async function handleAction(button) {
     return;
   }
   if (action === 'new-application') {
-    const application = await api.createApplication();
-    formStep = 1; activeDraftId = application.id;
-    return navigate(`#/form/${application.id}`);
+    activeDraft = await api.createApplication();
+    activeDraftId = activeDraft.id;
+    formStep = 1;
+    return navigate(`#/form/${activeDraft.id}`);
   }
   if (action === 'change-step') {
-    collectApplicationForm();
+    await saveActiveDraft();
     formStep = Math.max(1, Math.min(5, formStep + Number(button.dataset.delta)));
     return render();
   }
   if (action === 'save-draft') {
-    collectApplicationForm();
-    showMessage('Draft saved.');
-    return;
+    await saveActiveDraft({ notify: true });
+    return render();
   }
   if (action === 'load-preset') {
-    const form = document.getElementById('application-form');
-    const application = findApplication(form.dataset.id);
-    Object.assign(application, structuredClone(PRESETS[button.dataset.kind]), {
-      consent: true, myinfoPulled: true, cpfPulled: true, creditPulled: true
+    selectedMockPersona = button.dataset.kind;
+    let draft = await saveActiveDraft();
+    for (const retrieve of [api.retrieveMyInfo, api.retrieveCpf, api.retrieveCreditReport]) {
+      const response = await retrieve(draft.id, selectedMockPersona);
+      draft = response.application;
+      activeDraft = draft;
+      activeDraftId = draft.id;
+    }
+    const preset = PRESETS[selectedMockPersona];
+    activeDraft = await api.updateApplication(draft.id, {
+      empType: preset.empType,
+      employer: preset.employer,
+      title: preset.title,
+      empMonths: preset.empMonths,
+      incomeDeclared: preset.incomeDeclared,
+      carModel: preset.carModel,
+      carPrice: preset.carPrice,
+      omv: preset.omv,
+      carAge: preset.carAge,
+      downPayment: preset.downPayment,
+      loanAmount: preset.loanAmount,
+      tenureYears: preset.tenureYears
     });
-    persist();
-    showMessage(`${button.dataset.kind[0].toUpperCase() + button.dataset.kind.slice(1)}-risk preset loaded.`);
+    activeDraftId = activeDraft.id;
+    showMessage(`${selectedMockPersona[0].toUpperCase() + selectedMockPersona.slice(1)}-risk preset retrieved from the frozen Mock API dataset.`);
     return render();
   }
   if (action === 'pull-myinfo') {
-    const application = collectApplicationForm();
-    const sample = PRESETS.low;
-    Object.assign(application, {
-      name: application.name || sample.name, nric: application.nric || sample.nric,
-      age: application.age || sample.age, residency: application.residency || sample.residency,
-      phone: application.phone || sample.phone, education: application.education || sample.education,
-      marital: application.marital || sample.marital, consent: true, myinfoPulled: true
-    });
-    addAudit(application.id, 'Information Retrieved', 'Applicant', 'MyInfo Sandbox identity details retrieved with simulated authorization.');
-    showMessage('MyInfo Sandbox details retrieved.');
-    return render();
+    return retrieveMockData(api.retrieveMyInfo, 'MyInfo Sandbox details');
   }
   if (action === 'toggle-scope') {
     const note = document.getElementById('scope-note');
@@ -149,44 +307,41 @@ async function handleAction(button) {
     return;
   }
   if (action === 'pull-cpf') {
-    const application = collectApplicationForm();
-    application.incomeVerified = application.incomeVerified || application.incomeDeclared || PRESETS.low.incomeVerified;
-    application.cpfPulled = true; persist();
-    addAudit(application.id, 'CPF Retrieved', 'Applicant', 'Synthetic CPF contribution record retrieved.');
-    showMessage('Synthetic CPF contribution record retrieved.');
-    return render();
+    return retrieveMockData(api.retrieveCpf, 'Synthetic CPF contribution record');
   }
   if (action === 'pull-credit') {
-    const application = collectApplicationForm();
-    if (application.existingMonthly === '') application.existingMonthly = PRESETS.low.existingMonthly;
-    if (application.outstanding === '') application.outstanding = PRESETS.low.outstanding;
-    if (application.latePayments === '') application.latePayments = PRESETS.low.latePayments;
-    if (application.otherLoans === '') application.otherLoans = PRESETS.low.otherLoans;
-    application.creditPulled = true; persist();
-    addAudit(application.id, 'Credit Report Retrieved', 'Applicant', 'Synthetic credit report retrieved with simulated authorization.');
-    showMessage('Synthetic credit report retrieved.');
-    return render();
+    return retrieveMockData(api.retrieveCreditReport, 'Synthetic credit report');
   }
   if (action === 'submit-application') {
-    const application = collectApplicationForm();
-    const missing = requiredMissing(application);
+    const draft = await saveActiveDraft();
+    const missing = requiredMissing(draft);
     if (missing.length) return showMessage(`Complete these required fields: ${missing.join(', ')}.`);
-    if (!application.consent) return showMessage('Applicant authorization is required before submission.');
-    await api.submitApplication(application.id);
+    if (!draft.consent) return showMessage('Applicant authorization is required before submission.');
+    activeDraft = await api.submitApplication(draft.id);
+    activeDraftId = activeDraft.id;
     showMessage('Application submitted. Automated checks are complete and the case is now in the officer queue.');
-    return navigate(`#/status/${application.id}`);
+    return navigate(`#/status/${activeDraft.id}`);
   }
   if (action === 'mock-upload') {
-    uploads.push(`bank_statement_${uploads.length + 1}.pdf`);
+    uploads.push({
+      name: `bank_statement_${uploads.length + 1}.pdf`,
+      size: 0,
+      contentType: 'application/pdf'
+    });
     return render();
   }
   if (action === 'submit-supplement') {
     if (!uploads.length) return showMessage('Add at least one simulated file before submitting.');
     const form = document.getElementById('supplement-form');
-    await api.submitSupplement(form.dataset.id, { note: form.elements.supplementNote.value.trim(), files: uploads });
+    const application = await api.submitSupplement(form.dataset.id, {
+      note: form.elements.supplementNote.value.trim(),
+      files: uploads
+    });
     uploads = [];
+    activeDraft = application;
+    activeDraftId = application.id;
     showMessage('Supplementary information submitted. The application has returned to officer review.');
-    return navigate(`#/status/${form.dataset.id}`);
+    return navigate(`#/status/${application.id}`);
   }
   if (action === 'filter-queue') {
     queueFilters = {
@@ -196,27 +351,36 @@ async function handleAction(button) {
     };
     return render();
   }
-  if (action === 'show-original') return showMessage('Demo environment: this action would display the applicant’s original form snapshot and submitted document list.');
+  if (action === 'show-original') {
+    return showMessage('Demo environment: this action would display the applicant’s original form snapshot and submitted document list.');
+  }
   if (action === 'highlight-fields') {
     document.querySelectorAll('.frow').forEach(element => element.classList.remove('hl'));
     button.dataset.fields.split(',').forEach(key => {
       const field = document.getElementById(`f_${key}`);
-      if (field) { field.classList.add('hl'); field.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      if (field) {
+        field.classList.add('hl');
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     });
     return;
   }
   if (action === 'rerun-risk') {
-    const application = findApplication(button.dataset.id);
-    const scenario = { ...application, downPayment: document.getElementById('s-down').value, incomeVerified: document.getElementById('s-income').value };
-    scenario.loanAmount = n(application.carPrice) - n(scenario.downPayment);
-    const before = evaluate(application, listApplications()), after = evaluate(scenario, listApplications());
-    const delta = after.score - before.score;
-    document.getElementById('rerun-output').innerHTML = `<div class="note">Adjusted risk score <b>${after.score}</b> (was ${before.score}, ${delta >= 0 ? '+' : ''}${delta}); band <b>${after.level}</b>; recommendation <b>${after.recommendation}</b>.<br><span class="muted">Sensitivity test only. The case and audit records are unchanged.</span></div>`;
+    const applicationId = button.dataset.id;
+    const before = assessmentCache.get(applicationId);
+    const after = await api.evaluateApplication(applicationId, {
+      downPayment: document.getElementById('s-down').value,
+      incomeVerified: document.getElementById('s-income').value
+    }, false);
+    const delta = before ? after.score - before.score : 0;
+    document.getElementById('rerun-output').innerHTML = `<div class="note">Adjusted risk score <b>${after.score}</b>${before ? ` (was ${before.score}, ${delta >= 0 ? '+' : ''}${delta})` : ''}; band <b>${after.level}</b>; recommendation <b>${after.recommendation}</b>.<br><span class="muted">Sensitivity test only. The case and audit records are unchanged.</span></div>`;
     return;
   }
   if (action === 'pick-decision') {
     selectedDecision = button.dataset.decision;
-    document.querySelectorAll('[data-action="pick-decision"]').forEach(element => { element.style.outline = ''; });
+    document.querySelectorAll('[data-action="pick-decision"]').forEach(element => {
+      element.style.outline = '';
+    });
     button.style.outline = '3px solid var(--brand)';
     document.getElementById('decision-info').textContent = `${selectedDecision} selected. Add a rationale to continue.`;
     updateDecisionButton();
@@ -224,10 +388,17 @@ async function handleAction(button) {
   }
   if (action === 'commit-decision') {
     const note = document.getElementById('officer-note').value.trim();
-    if (!selectedDecision || !note) return;
-    if (selectedDecision === 'Approve') await api.approveApplication(button.dataset.id, { note });
-    else if (selectedDecision === 'Reject') await api.rejectApplication(button.dataset.id, { note });
-    else await api.requestSupplement(button.dataset.id, { note });
+    if (!selectedDecision || !note) return showMessage('Select a decision and enter a nonblank rationale.');
+    let application;
+    if (selectedDecision === 'Approve') {
+      application = await api.approveApplication(button.dataset.id, { note });
+    } else if (selectedDecision === 'Reject') {
+      application = await api.rejectApplication(button.dataset.id, { note });
+    } else {
+      application = await api.requestSupplement(button.dataset.id, { note });
+    }
+    const index = applicationsCache.findIndex(item => item.id === application.id);
+    if (index >= 0) applicationsCache[index] = application;
     selectedDecision = null;
     showMessage('The action was recorded, the applicant status was updated, and an audit record was created.');
     return navigate('#/queue');
@@ -244,50 +415,105 @@ function updateDecisionButton() {
 function refreshLtvCheck(application) {
   const box = document.getElementById('ltv-check');
   if (!box || !application) return;
-  const { metrics } = evaluate(application, listApplications());
+  const { metrics } = evaluate(application, applicationsCache);
   const exceeds = metrics.ltv > metrics.cap + 0.0001;
   box.classList.toggle('bad', exceeds);
   box.innerHTML = `<b>LTV check: ${pct(metrics.ltv)}</b> · Applicable cap: ${pct(metrics.cap)} · Estimated monthly payment: ${money(metrics.monthly)}
     <br>${exceeds ? 'The requested financing exceeds the applicable cap.' : 'The requested financing is within the applicable cap.'}`;
 }
 
-function exportAudit() {
-  const logs = getAuditLogs();
+async function exportAudit() {
+  const logs = await api.getAuditLogs();
+  auditCache = logs;
   const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
   const rows = [['Time', 'Application ID', 'Action', 'Actor', 'Model version', 'Note'],
     ...logs.map(item => [new Date(item.ts).toISOString(), item.appId, item.action, item.actor, item.modelVersion, item.note])];
   const csv = rows.map(row => row.map(quote).join(',')).join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
-  link.href = url; link.download = 'audit_log.csv'; link.click();
+  link.href = url;
+  link.download = 'audit_log.csv';
+  link.click();
   URL.revokeObjectURL(url);
 }
 
-document.addEventListener('click', event => {
+document.addEventListener('click', async event => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   event.preventDefault();
-  handleAction(button);
+  const wasDisabled = button.disabled;
+  button.disabled = true;
+  try {
+    await handleAction(button);
+  } catch (error) {
+    await handleError(error);
+  } finally {
+    if (button.isConnected) button.disabled = wasDisabled;
+  }
 });
+
 appRoot.addEventListener('input', event => {
   if (event.target.id === 'officer-note') updateDecisionButton();
-  if (event.target.closest('#application-form')) refreshLtvCheck(collectApplicationForm());
+  if (event.target.closest('#application-form')) {
+    refreshLtvCheck(collectApplicationForm());
+  }
 });
+
 appRoot.addEventListener('change', event => {
-  if (event.target.closest('#application-form')) refreshLtvCheck(collectApplicationForm());
+  if (event.target.closest('#application-form')) {
+    refreshLtvCheck(collectApplicationForm());
+  }
 });
-appRoot.addEventListener('submit', event => {
+
+appRoot.addEventListener('submit', async event => {
   event.preventDefault();
   if (event.target.id !== 'login-form') return;
-  const username = event.target.elements.username.value.trim();
-  const password = event.target.elements.password.value;
-  if (!username) return showMessage('Enter the demo account or use “Fill demo account”.');
-  if (password !== 'demo123') return showMessage('The demo password is demo123.');
-  const role = event.target.dataset.role;
-  setRole(role);
-  navigate(role === 'applicant' ? '#/apply-home' : '#/queue');
-});
-window.addEventListener('hashchange', render);
 
-initializeStore();
-render();
+  const submit = event.target.querySelector('[type="submit"]');
+  const wasDisabled = submit?.disabled;
+  if (submit) submit.disabled = true;
+  try {
+    const username = event.target.elements.username.value.trim();
+    const password = event.target.elements.password.value;
+    const role = event.target.dataset.role;
+    if (!username) {
+      showMessage('Enter the demo account or use “Fill demo account”.');
+      return;
+    }
+    const credentials = role === 'applicant'
+      ? { role, email: username, password }
+      : username.includes('@')
+        ? { role, email: username, password }
+        : { role, staffId: username, password };
+    currentUser = await api.login(credentials);
+    clearTemporaryState();
+    await navigate(role === 'applicant' ? '#/apply-home' : '#/queue');
+  } catch (error) {
+    await handleError(error);
+  } finally {
+    if (submit?.isConnected) submit.disabled = wasDisabled;
+  }
+});
+
+window.addEventListener('hashchange', () => {
+  if (suppressNextHashRender) {
+    suppressNextHashRender = false;
+    return;
+  }
+  void renderSafely();
+});
+
+async function start() {
+  if (api.hasSession()) {
+    try {
+      currentUser = await api.getCurrentUser();
+    } catch (error) {
+      api.logout();
+      currentUser = null;
+      await handleError(error);
+    }
+  }
+  await renderSafely();
+}
+
+void start();
