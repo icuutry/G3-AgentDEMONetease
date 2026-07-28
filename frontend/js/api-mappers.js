@@ -1,6 +1,7 @@
 export const APPLICATION_FIELDS = Object.freeze([
   'consent',
   'myinfoPulled',
+  'cpfPulled',
   'creditPulled',
   'name',
   'nric',
@@ -150,7 +151,21 @@ export function normalizeApplication(application) {
     createdAt: timestamp(application.createdAt),
     updatedAt: timestamp(application.updatedAt),
     submittedAt: timestamp(application.submittedAt),
+    supplementFiles: Array.isArray(application.supplementFiles)
+      ? application.supplementFiles.map(normalizeSupplementFile)
+      : [],
     riskAssessment: normalizeRiskAssessment(application.riskAssessment)
+  };
+}
+
+export function normalizeSupplementFile(file) {
+  if (!file) return null;
+
+  return {
+    ...file,
+    name: file.name,
+    size: file.size,
+    contentType: file.contentType
   };
 }
 
@@ -160,7 +175,9 @@ export function normalizeSupplement(supplement) {
   return {
     ...supplement,
     createdAt: timestamp(supplement.createdAt),
-    files: Array.isArray(supplement.files) ? supplement.files : []
+    files: Array.isArray(supplement.files)
+      ? supplement.files.map(normalizeSupplementFile)
+      : []
   };
 }
 
@@ -176,17 +193,37 @@ export function serializeSupplementFile(file = {}) {
 export function normalizeAuditLog(record) {
   if (!record) return null;
 
-  const actionCode = record.action;
-  const metadata = record.metadataJson || record.metadata || {};
+  const actionCode = record.actionCode ?? record.action;
+  const action = record.action ?? AUDIT_ACTIONS[actionCode] ?? actionCode;
+  const metadata = record.metadata ?? record.metadataJson ?? {};
 
   return {
     ...record,
-    appId: record.applicationId,
-    ts: timestamp(record.createdAt),
+    appId: record.appId ?? record.applicationId,
+    ts: timestamp(record.ts ?? record.createdAt),
     actionCode,
-    action: AUDIT_ACTIONS[actionCode] || actionCode,
-    role: record.actorRole,
-    details: record.note,
+    action,
+    role: record.role ?? record.actorRole,
+    details: record.details ?? record.note,
     metadata
+  };
+}
+
+export function normalizeMockRetrieval(response) {
+  if (!response) return null;
+
+  return {
+    ...response,
+    retrievedAt: timestamp(response.retrievedAt),
+    application: normalizeApplication(response.application)
+  };
+}
+
+export function normalizeMockPersonas(response) {
+  if (!response) return null;
+
+  return {
+    ...response,
+    items: Array.isArray(response.items) ? response.items : []
   };
 }

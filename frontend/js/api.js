@@ -1,8 +1,9 @@
 import {
   normalizeApplication,
   normalizeAuditLog,
+  normalizeMockPersonas,
+  normalizeMockRetrieval,
   normalizeRiskAssessment,
-  normalizeSupplement,
   serializeApplication,
   serializeSupplementFile
 } from './api-mappers.js';
@@ -20,6 +21,8 @@ const DECISIONS = {
   Reject: 'reject',
   'Request Info': 'request_info'
 };
+
+const MOCK_PERSONA_IDS = new Set(['low', 'medium', 'high']);
 
 export class ApiError extends Error {
   constructor({ status = 0, code = 'api_error', message = 'API request failed', details = null } = {}) {
@@ -97,6 +100,26 @@ async function request(path, { method = 'GET', json } = {}) {
 
 function applicationPath(applicationId, suffix = '') {
   return `/applications/${encodeURIComponent(applicationId)}${suffix}`;
+}
+
+function mockPersonaBody(personaId) {
+  if (!MOCK_PERSONA_IDS.has(personaId)) {
+    throw new ApiError({
+      status: 0,
+      code: 'invalid_persona_id',
+      message: `Unsupported mock persona: ${personaId}`,
+      details: personaId
+    });
+  }
+  return { personaId };
+}
+
+async function retrieveMockApplication(applicationId, endpoint, personaId) {
+  const response = await request(applicationPath(applicationId, `/mock/${endpoint}`), {
+    method: 'POST',
+    json: mockPersonaBody(personaId)
+  });
+  return normalizeMockRetrieval(response);
 }
 
 function decisionNote(payload) {
@@ -219,7 +242,7 @@ export async function requestSupplement(applicationId, payload) {
 }
 
 export async function submitSupplement(applicationId, payload = {}) {
-  const response = await request(applicationPath(applicationId, '/supplements'), {
+  const application = await request(applicationPath(applicationId, '/supplements'), {
     method: 'POST',
     json: {
       note: String(payload.note ?? ''),
@@ -227,11 +250,23 @@ export async function submitSupplement(applicationId, payload = {}) {
     }
   });
 
-  return {
-    supplement: normalizeSupplement(response),
-    application: null,
-    requiresApplicationRefetch: true
-  };
+  return normalizeApplication(application);
+}
+
+export async function listMockPersonas() {
+  return normalizeMockPersonas(await request('/mock/personas'));
+}
+
+export async function retrieveMyInfo(applicationId, personaId = 'low') {
+  return retrieveMockApplication(applicationId, 'myinfo', personaId);
+}
+
+export async function retrieveCpf(applicationId, personaId = 'low') {
+  return retrieveMockApplication(applicationId, 'cpf', personaId);
+}
+
+export async function retrieveCreditReport(applicationId, personaId = 'low') {
+  return retrieveMockApplication(applicationId, 'credit-report', personaId);
 }
 
 export async function getAuditLogs(applicationId) {

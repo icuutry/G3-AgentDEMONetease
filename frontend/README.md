@@ -91,6 +91,10 @@ Use **Reset demo** in the navigation bar to restore the initial synthetic datase
 - `rejectApplication(applicationId, payload)`
 - `requestSupplement(applicationId, payload)`
 - `submitSupplement(applicationId, payload)`
+- `listMockPersonas()`
+- `retrieveMyInfo(applicationId, personaId)`
+- `retrieveCpf(applicationId, personaId)`
+- `retrieveCreditReport(applicationId, personaId)`
 - `getAuditLogs(applicationId)`
 
 ## Replacing the local adapter
@@ -108,4 +112,4 @@ No framework, package manager, bundler, external library, font, or API is requir
 
 ## API configuration
 
-The API adapter uses `window.CAR_LOAN_API_BASE`, falling back to `http://127.0.0.1:8000`; set the global before loading `js/app.js` when a different origin is required. Authentication tokens are kept in `sessionStorage`. After `submitSupplement()`, callers must refetch the application because the backend returns the created supplement rather than the updated application.
+The API adapter uses `window.CAR_LOAN_API_BASE`, falling back to `http://127.0.0.1:8000`; set the global before loading `js/app.js` when a different origin is required. Authentication tokens are kept in `sessionStorage`. `submitSupplement()` returns the normalized updated application. Mock retrieval functions return the backend provenance envelope with a normalized application.
