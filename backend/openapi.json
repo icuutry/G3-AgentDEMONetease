@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AI Car Loan Approval & Risk Control Agent API",
-    "description": "Backend for the Applicant → validation → risk evaluation → Loan Officer decision → status → audit workflow.",
-    "version": "1.0.0"
+    "description": "Backend contract for the English modular frontend. A successful submission is validated and assessed atomically, then returned in reviewing status. GET risk-assessment returns the latest saved assessment; POST evaluate provides explicit saved or preview evaluation behavior.",
+    "version": "1.1.0"
   },
   "paths": {
     "/health": {
@@ -153,11 +153,18 @@
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApplicationCreate"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApplicationCreate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           }
@@ -747,7 +754,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SupplementOut"
+                  "$ref": "#/components/schemas/ApplicationOut"
                 }
               }
             }
@@ -818,6 +825,279 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mock/personas": {
+      "get": {
+        "tags": [
+          "mock-data"
+        ],
+        "summary": "Mock Personas",
+        "operationId": "mock_personas_mock_personas_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Demo-Role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-Role"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockPersonaList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/mock/myinfo": {
+      "post": {
+        "tags": [
+          "mock-data"
+        ],
+        "summary": "Mock Myinfo",
+        "operationId": "mock_myinfo_applications__application_id__mock_myinfo_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "X-Demo-Role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-Role"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MockRetrievalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockRetrievalOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/mock/cpf": {
+      "post": {
+        "tags": [
+          "mock-data"
+        ],
+        "summary": "Mock Cpf",
+        "operationId": "mock_cpf_applications__application_id__mock_cpf_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "X-Demo-Role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-Role"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MockRetrievalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockRetrievalOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/mock/credit-report": {
+      "post": {
+        "tags": [
+          "mock-data"
+        ],
+        "summary": "Mock Credit Report",
+        "operationId": "mock_credit_report_applications__application_id__mock_credit_report_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "X-Demo-Role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Demo-Role"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MockRetrievalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockRetrievalOut"
                 }
               }
             }
@@ -906,6 +1186,11 @@
           "myinfoPulled": {
             "type": "boolean",
             "title": "Myinfopulled",
+            "default": false
+          },
+          "cpfPulled": {
+            "type": "boolean",
+            "title": "Cpfpulled",
             "default": false
           },
           "creditPulled": {
@@ -1164,6 +1449,11 @@
           "myinfoPulled": {
             "type": "boolean",
             "title": "Myinfopulled",
+            "default": false
+          },
+          "cpfPulled": {
+            "type": "boolean",
+            "title": "Cpfpulled",
             "default": false
           },
           "creditPulled": {
@@ -1450,6 +1740,13 @@
             "type": "string",
             "title": "Supplementnote"
           },
+          "supplementFiles": {
+            "items": {
+              "$ref": "#/components/schemas/SupplementFile"
+            },
+            "type": "array",
+            "title": "Supplementfiles"
+          },
           "riskAssessment": {
             "anyOf": [
               {
@@ -1500,6 +1797,17 @@
               }
             ],
             "title": "Myinfopulled"
+          },
+          "cpfPulled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpfpulled"
           },
           "creditPulled": {
             "anyOf": [
@@ -1829,9 +2137,17 @@
             "type": "string",
             "title": "Applicationid"
           },
+          "appId": {
+            "type": "string",
+            "title": "Appid"
+          },
           "action": {
             "type": "string",
             "title": "Action"
+          },
+          "actionCode": {
+            "type": "string",
+            "title": "Actioncode"
           },
           "actor": {
             "type": "string",
@@ -1846,6 +2162,10 @@
             "format": "date-time",
             "title": "Createdat"
           },
+          "ts": {
+            "type": "integer",
+            "title": "Ts"
+          },
           "note": {
             "type": "string",
             "title": "Note"
@@ -1853,6 +2173,11 @@
           "modelVersion": {
             "type": "string",
             "title": "Modelversion"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
           },
           "metadataJson": {
             "additionalProperties": true,
@@ -1865,12 +2190,16 @@
         "required": [
           "id",
           "applicationId",
+          "appId",
           "action",
+          "actionCode",
           "actor",
           "actorRole",
           "createdAt",
+          "ts",
           "note",
           "modelVersion",
+          "metadata",
           "metadataJson"
         ],
         "title": "AuditLogOut"
@@ -2062,6 +2391,128 @@
         ],
         "title": "LoginResponse"
       },
+      "MockPersonaList": {
+        "properties": {
+          "snapshotVersion": {
+            "type": "string",
+            "title": "Snapshotversion"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MockPersonaSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "snapshotVersion",
+          "label",
+          "items"
+        ],
+        "title": "MockPersonaList"
+      },
+      "MockPersonaSummary": {
+        "properties": {
+          "personaId": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Personaid"
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Displayname"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "personaId",
+          "displayName"
+        ],
+        "title": "MockPersonaSummary"
+      },
+      "MockRetrievalOut": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "myinfo_sandbox",
+              "cpf_sandbox",
+              "credit_report_sandbox"
+            ],
+            "title": "Provider"
+          },
+          "personaId": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Personaid"
+          },
+          "snapshotVersion": {
+            "type": "string",
+            "title": "Snapshotversion"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Retrievedat"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified",
+            "default": true
+          },
+          "application": {
+            "$ref": "#/components/schemas/ApplicationOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "personaId",
+          "snapshotVersion",
+          "label",
+          "retrievedAt",
+          "application"
+        ],
+        "title": "MockRetrievalOut"
+      },
+      "MockRetrievalRequest": {
+        "properties": {
+          "personaId": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Personaid",
+            "default": "low"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MockRetrievalRequest"
+      },
       "RiskAssessmentOut": {
         "properties": {
           "id": {
@@ -2212,61 +2663,22 @@
           "size": {
             "type": "integer",
             "minimum": 0.0,
-            "title": "Size"
+            "title": "Size",
+            "default": 0
           },
           "contentType": {
             "type": "string",
             "maxLength": 120,
             "title": "Contenttype",
-            "default": "application/octet-stream"
+            "default": "application/pdf"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "name",
-          "size"
+          "name"
         ],
         "title": "SupplementFile"
-      },
-      "SupplementOut": {
-        "properties": {
-          "id": {
-            "type": "integer",
-            "title": "Id"
-          },
-          "applicationId": {
-            "type": "string",
-            "title": "Applicationid"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Createdat"
-          },
-          "note": {
-            "type": "string",
-            "title": "Note"
-          },
-          "files": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Files"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "applicationId",
-          "createdAt",
-          "note",
-          "files"
-        ],
-        "title": "SupplementOut"
       },
       "SupplementRequest": {
         "properties": {
@@ -2278,7 +2690,14 @@
           },
           "files": {
             "items": {
-              "$ref": "#/components/schemas/SupplementFile"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SupplementFile"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             },
             "type": "array",
             "maxItems": 10,

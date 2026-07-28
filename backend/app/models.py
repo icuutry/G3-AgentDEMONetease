@@ -27,6 +27,7 @@ class Application(Base):
 
     consent: Mapped[bool] = mapped_column(Boolean, default=False)
     myinfoPulled: Mapped[bool] = mapped_column(Boolean, default=False)
+    cpfPulled: Mapped[bool] = mapped_column(Boolean, default=False)
     creditPulled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     name: Mapped[str] = mapped_column(String(120), default="")

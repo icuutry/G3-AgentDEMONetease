@@ -11,10 +11,31 @@ from sqlalchemy.orm import Session
 from .auth import DemoAccount
 from .models import Application, AuditLog, RiskEvaluation, Supplement
 from .risk_engine import MODEL_VERSION, evaluate, required_missing
-from .schemas import ApplicationCreate, ApplicationOut, ApplicationPatch, RiskAssessmentOut
+from .schemas import (
+    ApplicationCreate,
+    ApplicationOut,
+    ApplicationPatch,
+    AuditLogOut,
+    RiskAssessmentOut,
+)
 
 
-EDITABLE_FIELDS = tuple(ApplicationCreate.model_fields)
+NON_NULLABLE_PATCH_FIELDS = {
+    "consent",
+    "myinfoPulled",
+    "cpfPulled",
+    "creditPulled",
+    "name",
+    "nric",
+    "residency",
+    "phone",
+    "empType",
+    "employer",
+    "title",
+    "education",
+    "marital",
+    "tenureYears",
+}
 ALLOWED_TRANSITIONS = {
     "draft": {"submitted"},
     "submitted": {"reviewing"},
@@ -22,6 +43,20 @@ ALLOWED_TRANSITIONS = {
     "need_info": {"reviewing"},
     "approved": set(),
     "rejected": set(),
+}
+AUDIT_ACTION_LABELS = {
+    "draft_created": "Draft Created",
+    "draft_saved": "Draft Saved",
+    "submitted": "Submitted",
+    "information_retrieved": "Information Retrieved",
+    "myinfo_retrieved": "MyInfo Retrieved",
+    "cpf_retrieved": "CPF Retrieved",
+    "credit_report_retrieved": "Credit Report Retrieved",
+    "risk_assessed": "Risk Assessed",
+    "information_requested": "Information Requested",
+    "information_submitted": "Supplement Submitted",
+    "approved": "Approved",
+    "rejected": "Rejected",
 }
 
 
@@ -117,6 +152,15 @@ def latest_evaluation(db: Session, app_id: str) -> RiskEvaluation | None:
     )
 
 
+def latest_supplement(db: Session, app_id: str) -> Supplement | None:
+    return db.scalar(
+        select(Supplement)
+        .where(Supplement.applicationId == app_id)
+        .order_by(Supplement.id.desc())
+        .limit(1)
+    )
+
+
 def risk_out(row: RiskEvaluation | None) -> RiskAssessmentOut | None:
     if row is None:
         return None
@@ -141,8 +185,34 @@ def application_out(db: Session, application: Application) -> ApplicationOut:
         column.name: getattr(application, column.name)
         for column in Application.__table__.columns
     }
+    supplement = latest_supplement(db, application.id)
     return ApplicationOut(
-        **data, riskAssessment=risk_out(latest_evaluation(db, application.id))
+        **data,
+        supplementFiles=supplement.files if supplement else [],
+        riskAssessment=risk_out(latest_evaluation(db, application.id)),
+    )
+
+
+def audit_out(row: AuditLog) -> AuditLogOut:
+    created_at = row.createdAt
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    timestamp_ms = int(created_at.timestamp() * 1000)
+    metadata = dict(row.metadataJson or {})
+    return AuditLogOut(
+        id=row.id,
+        applicationId=row.applicationId,
+        appId=row.applicationId,
+        action=AUDIT_ACTION_LABELS.get(row.action, row.action),
+        actionCode=row.action,
+        actor=row.actor,
+        actorRole=row.actorRole,
+        createdAt=row.createdAt,
+        ts=timestamp_ms,
+        note=row.note,
+        modelVersion=row.modelVersion,
+        metadata=metadata,
+        metadataJson=metadata,
     )
 
 
@@ -175,6 +245,17 @@ def update_application(
             "Only draft applications can be edited",
         )
     changes = payload.model_dump(exclude_unset=True)
+    invalid_nulls = sorted(
+        field
+        for field, value in changes.items()
+        if field in NON_NULLABLE_PATCH_FIELDS and value is None
+    )
+    if invalid_nulls:
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "null_not_allowed",
+            "Explicit null is not allowed for: " + ", ".join(invalid_nulls),
+        )
     for field, value in changes.items():
         setattr(application, field, value)
     application.updatedAt = datetime.now(UTC).replace(tzinfo=None)
@@ -197,6 +278,7 @@ def evaluate_application(
     overrides: ApplicationPatch | None = None,
     persist: bool = True,
     user: DemoAccount | None = None,
+    commit: bool = True,
 ) -> dict[str, Any]:
     all_applications = list(db.scalars(select(Application)).all())
     target: Any = application
@@ -224,7 +306,10 @@ def evaluate_application(
                 "evaluationId": row.id,
             },
         )
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     return result
 
 
@@ -262,11 +347,12 @@ def submit_application(
         "Synthetic source checks completed",
         {
             "myinfoPulled": application.myinfoPulled,
+            "cpfPulled": application.cpfPulled,
             "creditPulled": application.creditPulled,
         },
     )
     db.flush()
-    evaluate_application(db, application, persist=True)
+    evaluate_application(db, application, persist=True, commit=False)
     change_status(application, "reviewing")
     application.updatedAt = datetime.now(UTC).replace(tzinfo=None)
     db.commit()

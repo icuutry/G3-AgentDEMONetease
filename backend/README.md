@@ -1,179 +1,447 @@
-# AI Car Loan Agent 后端
+# AI Car Loan Approval & Risk Agent — Backend
 
-这是根据 `f2.html`、前后端对接 PDF 和两份 Word 说明实现的后端工程。它以 FastAPI + SQLite 提供完整演示闭环：
+## Overview
 
-`Applicant 新建/保存/提交 → 后端校验 → 风险评估 → Officer 批准/拒绝/要求补件 → Applicant 补件 → 状态同步 → 审计追踪`
+This FastAPI service is the backend contract for the latest modular English frontend in `../frontend`.
 
-## 已实现
+It implements the complete demonstration workflow:
 
-- 固定演示账号登录与角色权限
-- 申请 CRUD、草稿锁定和申请人数据隔离
-- `draft / submitted / reviewing / need_info / approved / rejected` 状态机
-- 与 `f2.html` 一致的 LTV、DSR、首付、收入差异、任职、逾期、车龄、重复申请规则
-- 每次持久化评估保存规则版本、模型版本、分数、指标、因素、规则、问题和硬规则
-- 人工决定强制填写备注，同时保留 AI 评估和人工最终决定
-- 补件说明及文件元数据保存（不做 OCR）
-- 追加式审计日志
-- 5 个演示案件，风险分约为 Low 23、Medium 54、High 77
-- Swagger / OpenAPI 文档
+```text
+Applicant creates a draft
+→ retrieves frozen synthetic MyInfo, CPF, and credit data
+→ saves and submits the application
+→ backend validates and stores a deterministic risk assessment
+→ loan officer approves, rejects, or requests information
+→ applicant submits supplementary information
+→ status and audit records are updated
+```
 
-## 目录
+All identities, employers, financial records, authorizations, and decisions are synthetic test data. No external Singpass, MyInfo, CPF, or credit-bureau service is contacted.
+
+## Current release
+
+API version: `1.1.0`
+
+This release includes the frontend-integration fixes requested before formal integration:
+
+- one consistent `submitted → reviewing` workflow;
+- controlled handling of explicit `null` values in PATCH requests;
+- documented saved-result behavior for `GET /risk-assessment`;
+- `cpfPulled` support in persistence and API schemas;
+- frontend-compatible supplementary-information responses;
+- frontend-compatible audit fields;
+- versioned MyInfo, CPF, and Credit Report Mock APIs;
+- additive SQLite migration for existing databases;
+- updated automated tests and `openapi.json`;
+- English-only backend comments and documentation.
+
+## Technology
+
+| Component | Implementation |
+|---|---|
+| API | FastAPI `0.116.1` |
+| Server | Uvicorn `0.35.0` |
+| ORM | SQLAlchemy `2.0.41` |
+| Validation | Pydantic `2.11.7` |
+| Local database | SQLite |
+| Authentication | Fixed demo bearer tokens |
+| Risk model | Deterministic rules engine |
+
+## Folder structure
 
 ```text
 backend/
   app/
-    auth.py          固定演示账号和角色守卫
-    config.py        数据库、CORS、演示数据配置
-    database.py      SQLAlchemy 引擎与会话
-    main.py          FastAPI 路由
-    models.py        SQLite 表模型
-    risk_engine.py   确定性风险规则引擎
-    schemas.py       请求/响应 JSON 契约
-    seed.py          5 个演示案件
-    service.py       状态机、审计和业务逻辑
-  tests/             风险引擎与端到端 API 测试
+    mock_data/
+      frozen_personas_v1.json
+    auth.py
+    config.py
+    database.py
+    main.py
+    migrations.py
+    mock_provider.py
+    models.py
+    risk_engine.py
+    schemas.py
+    seed.py
+    service.py
+  tests/
+    test_api.py
+    test_risk_engine.py
+  scripts/
+    export_openapi.py
+  .env.example
+  openapi.json
+  pytest.ini
   requirements.txt
+  requirements-dev.txt
   run.ps1
 ```
 
-## 启动
+## Run locally on Windows
 
-在 PowerShell 中进入 `backend`：
+Open PowerShell in the `backend` directory:
 
 ```powershell
 .\run.ps1
 ```
 
-首次运行会创建 `.venv`、安装依赖、初始化 `car_loan_agent.db`，然后启动：
+The script creates `.venv` when necessary, installs runtime dependencies, and starts the API.
+
+Local addresses:
 
 - API: `http://127.0.0.1:8000`
-- Swagger: `http://127.0.0.1:8000/docs`
+- Swagger UI: `http://127.0.0.1:8000/docs`
 - OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`
+- Health check: `http://127.0.0.1:8000/health`
 
-## 与 index_api.html 联合演示
-
-`index_api.html` 应与原 `index.html` 并列放在 `Agent` 根目录。原文件保留为纯前端离线版本，新文件使用本后端和 SQLite。
-
-1. 先在 `Agent\backend` 运行 `.\run.ps1`。
-2. 使用 VS Code Live Server 打开 `Agent\index_api.html`。
-3. 推荐地址为 `http://127.0.0.1:5500/index_api.html`。
-4. 页面顶部出现“后端 API 已连接”后即可登录。
-
-不要直接双击并通过 `file://` 打开 API 版本，否则浏览器的 Origin/CORS 行为可能阻止请求。默认后端地址为 `http://127.0.0.1:8000`；部署时可在加载页面前设置 `window.CAR_LOAN_API_BASE` 覆盖。
-
-也可以手工启动：
+Manual startup:
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-## 演示账号
+## Configuration
 
-| 角色 | 账号 | 密码 | Token |
+Default values are shown in `.env.example`:
+
+```env
+CAR_LOAN_DATABASE_URL=sqlite:///./car_loan_agent.db
+CAR_LOAN_CORS_ORIGINS=http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:3000,http://localhost:3000
+CAR_LOAN_SEED_DEMO=true
+```
+
+## Demo accounts
+
+| Role | Account | Password | Token |
 |---|---|---|---|
 | Applicant | `applicant@demo.com` | `demo123` | `demo-applicant-token` |
-| Officer | `officer@demo.com` / `Officer01` | `demo123` | `demo-officer-token` |
+| Loan officer | `officer@demo.com` or `Officer01` | `demo123` | `demo-officer-token` |
 
-登录后发送：
+Authenticated requests use:
 
 ```http
 Authorization: Bearer demo-applicant-token
 ```
 
-为了便于现有单文件 HTML 快速联调，也支持请求头 `X-Demo-Role: applicant` 或 `X-Demo-Role: officer`。正式系统应替换成 JWT/OIDC。
+`X-Demo-Role` remains available for local compatibility only. It must not be used as production authentication.
 
-## 核心接口
+## Status workflow
 
-| Method | Endpoint | 角色 | 用途 |
+The stable state transitions are:
+
+```text
+draft → submitted → reviewing → approved
+                            ↘ rejected
+                            ↘ need_info → reviewing
+```
+
+The submission endpoint performs validation, the `submitted` transition, risk persistence, and the transition to `reviewing` in one database transaction. A successful `POST /applications/{id}/submit` therefore returns the application with:
+
+```json
+{
+  "status": "reviewing"
+}
+```
+
+`submitted` is the internal submission milestone and audit event. Officer decisions are accepted only when the application is in `reviewing`.
+
+## Core endpoints
+
+| Method | Endpoint | Role | Purpose |
 |---|---|---|---|
-| POST | `/auth/login` | Public | 演示登录 |
-| GET | `/auth/me` | Both | 当前用户 |
-| POST | `/applications` | Applicant | 新建申请 |
-| GET | `/applications` | Both | 申请人列表或审批队列 |
-| GET | `/applications/{id}` | Both | 申请及最新评估详情 |
-| PATCH | `/applications/{id}` | Applicant | 保存/修改草稿 |
-| POST | `/applications/{id}/submit` | Applicant | 提交、校验并自动评估 |
-| GET | `/applications/{id}/risk-assessment` | Both | 实时评估 |
-| POST | `/applications/{id}/evaluate` | Officer | 持久评估或参数预演 |
-| POST | `/applications/{id}/decision` | Officer | 批准、拒绝、要求补件 |
-| POST | `/applications/{id}/supplements` | Applicant | 提交补件说明和文件元数据 |
-| GET | `/audit-logs` | Both | 查询可见审计记录 |
-| POST | `/demo/reset` | Officer | 恢复演示数据 |
+| `GET` | `/health` | Public | Health and version information |
+| `POST` | `/auth/login` | Public | Demo login |
+| `GET` | `/auth/me` | Both | Current authenticated user |
+| `POST` | `/applications` | Applicant | Create a draft; body may be omitted |
+| `GET` | `/applications` | Both | Applicant list or officer queue |
+| `GET` | `/applications/{id}` | Both | Application and latest saved assessment |
+| `PATCH` | `/applications/{id}` | Applicant | Save a draft |
+| `POST` | `/applications/{id}/submit` | Applicant | Validate, submit, assess, and enter review |
+| `GET` | `/applications/{id}/risk-assessment` | Both | Return the latest saved assessment |
+| `POST` | `/applications/{id}/evaluate` | Officer | Run a saved evaluation or non-persistent preview |
+| `POST` | `/applications/{id}/decision` | Officer | Approve, reject, or request information |
+| `POST` | `/applications/{id}/supplements` | Applicant | Submit supplementary note and file metadata |
+| `GET` | `/audit-logs` | Both | Query visible audit records |
+| `POST` | `/demo/reset` | Officer | Restore seeded demo data |
 
-`GET /applications` 支持 `status`、`riskLevel`、`search` 查询参数。`GET /audit-logs` 支持 `applicationId`。
+`GET /applications` supports `status`, `riskLevel`, and `search`.
 
-## 前端字段与响应约定
+`GET /audit-logs` supports `applicationId`.
 
-申请字段保持 `f2.html` 的 camelCase 命名，例如：
+## PATCH null behavior
 
-```json
-{
-  "consent": true,
-  "name": "Test Applicant",
-  "nric": "S8••••99Z",
-  "empMonths": 20,
-  "incomeDeclared": 6000,
-  "incomeVerified": 6000,
-  "existingMonthly": 500,
-  "latePayments": 0,
-  "carPrice": 115000,
-  "omv": 17000,
-  "downPayment": 43700,
-  "loanAmount": 71300,
-  "tenureYears": 5
-}
-```
-
-风险输出使用稳定 code/value，不返回界面中文：
+Nullable numeric fields may be explicitly cleared:
 
 ```json
 {
-  "score": 23,
-  "level": "low",
-  "recommendation": "approve",
-  "metrics": {
-    "ltv": 0.62,
-    "cap": 0.7,
-    "dsr": 0.32,
-    "downPaymentRatio": 0.38,
-    "incomeGap": 0,
-    "monthlyPayment": 1424.91
-  },
-  "factors": [],
-  "rules": [],
-  "questions": [],
-  "hardRules": [],
-  "rulesVersion": "rules-v1.0.0",
-  "modelVersion": "deterministic-score-v1.0.0"
+  "incomeVerified": null
 }
 ```
 
-前端应负责把 `approved`、`high`、`income_gap_above_30` 等 code 映射成英文或中文显示文字。
+Non-nullable fields such as `name`, `consent`, `cpfPulled`, and `tenureYears` reject explicit `null` with HTTP 422:
 
-## 现有 HTML 的最小改造方向
+```json
+{
+  "detail": {
+    "code": "null_not_allowed",
+    "message": "Explicit null is not allowed for: name"
+  }
+}
+```
 
-1. 将 `load()` / `save()` 的全量 `localStorage` 操作替换为资源接口。
-2. `newApplication()` 调用 `POST /applications`。
-3. 保存草稿调用 `PATCH /applications/{id}`。
-4. `submitApp()` 调用 `POST /applications/{id}/submit`，不要再在浏览器执行可信风险评估。
-5. Officer 队列调用 `GET /applications`；详情调用 `GET /applications/{id}`。
-6. `commit()` 调用 `POST /applications/{id}/decision`。
-7. 补件调用 `POST /applications/{id}/supplements`。
-8. 审计页面调用 `GET /audit-logs`。
+This prevents database integrity errors while preserving the distinction between an omitted field and an explicit null.
 
-## 测试
+## Risk-assessment semantics
 
-安装开发依赖后：
+`GET /applications/{id}/risk-assessment` returns the latest persisted risk assessment. It does not silently recalculate.
+
+If the application has never been assessed, the endpoint returns HTTP 404 with `risk_assessment_not_found`.
+
+Use `POST /applications/{id}/evaluate` for explicit recalculation:
+
+```json
+{
+  "persist": false,
+  "overrides": {
+    "incomeVerified": 2500,
+    "downPayment": 30000
+  }
+}
+```
+
+- `persist: false` returns a sensitivity-test preview and does not change the case or audit log.
+- `persist: true` stores a new assessment and creates a `risk_assessed` audit event.
+
+The seeded reference results are:
+
+| Persona | Score | Recommendation |
+|---|---:|---|
+| Low | 23 | `approve` |
+| Medium | 54 | `manual_review` |
+| High | 77 | `reject` |
+
+## Fixed Mock APIs
+
+The dataset is stored in:
+
+```text
+app/mock_data/frozen_personas_v1.json
+```
+
+Current snapshot:
+
+```text
+sg-synthetic-personas-v1.0.0
+```
+
+Available personas:
+
+- `low`
+- `medium`
+- `high`
+
+List personas:
+
+```http
+GET /mock/personas
+```
+
+Retrieve MyInfo data:
+
+```http
+POST /applications/{id}/mock/myinfo
+Content-Type: application/json
+
+{
+  "personaId": "low"
+}
+```
+
+Retrieve CPF data:
+
+```http
+POST /applications/{id}/mock/cpf
+Content-Type: application/json
+
+{
+  "personaId": "low"
+}
+```
+
+Retrieve Credit Report data:
+
+```http
+POST /applications/{id}/mock/credit-report
+Content-Type: application/json
+
+{
+  "personaId": "low"
+}
+```
+
+Mock retrieval is available only for draft applications. Each request:
+
+- returns the same frozen fields for the same persona and snapshot;
+- updates the relevant application fields;
+- sets `myinfoPulled`, `cpfPulled`, or `creditPulled`;
+- records a source-specific audit event;
+- returns provenance and the updated application;
+- displays the label `Simulated authorization · Test data`.
+
+Example response envelope:
+
+```json
+{
+  "provider": "cpf_sandbox",
+  "personaId": "low",
+  "snapshotVersion": "sg-synthetic-personas-v1.0.0",
+  "label": "Simulated authorization · Test data",
+  "retrievedAt": "2026-07-28T10:00:00",
+  "verified": true,
+  "application": {
+    "id": "CAR-2026-006",
+    "cpfPulled": true,
+    "incomeVerified": 6000
+  }
+}
+```
+
+## Supplement contract
+
+The endpoint accepts either structured metadata:
+
+```json
+{
+  "note": "Latest bank statement supplied.",
+  "files": [
+    {
+      "name": "bank_statement.pdf",
+      "size": 143000,
+      "contentType": "application/pdf"
+    }
+  ]
+}
+```
+
+or the latest frontend's filename-only array:
+
+```json
+{
+  "note": "Latest bank statement supplied.",
+  "files": ["bank_statement.pdf"]
+}
+```
+
+Filename-only entries are normalized to `size: 0` and `contentType: application/pdf`.
+
+The response is the updated `ApplicationOut`, including:
+
+```json
+{
+  "status": "reviewing",
+  "supplementNote": "Latest bank statement supplied.",
+  "supplementFiles": [
+    {
+      "name": "bank_statement.pdf",
+      "size": 0,
+      "contentType": "application/pdf"
+    }
+  ]
+}
+```
+
+## Audit contract
+
+Each audit item includes frontend-ready fields and stable machine fields:
+
+```json
+{
+  "id": 10,
+  "applicationId": "CAR-2026-006",
+  "appId": "CAR-2026-006",
+  "action": "Risk Assessed",
+  "actionCode": "risk_assessed",
+  "actor": "System",
+  "actorRole": "system",
+  "createdAt": "2026-07-28T10:00:00",
+  "ts": 1785213600000,
+  "note": "Risk assessment completed",
+  "modelVersion": "deterministic-score-v1.0.0",
+  "metadata": {},
+  "metadataJson": {}
+}
+```
+
+- The latest frontend can use `appId`, `action`, and millisecond timestamp `ts`.
+- Integrations should use `actionCode` for stable logic.
+- `applicationId`, `createdAt`, and `metadataJson` remain available for backward compatibility.
+
+## SQLite compatibility migration
+
+Existing demo databases do not need to be deleted. At startup, `migrations.py` detects an older `applications` table and adds the non-null `cpfPulled` column with a safe default.
+
+For future production deployment, replace this lightweight compatibility step with a formal migration tool such as Alembic.
+
+## Frontend adapter notes
+
+The latest frontend should keep its `index.html`, CSS, and view modules. Its `js/api.js` should replace local-store calls with these endpoints.
+
+The API adapter must:
+
+- store the bearer token in `sessionStorage`;
+- add the bearer token to authenticated requests;
+- unwrap `{ "items": [], "total": 0 }` list responses;
+- replace local application objects with returned `ApplicationOut` objects;
+- unwrap `.application` from Mock API responses;
+- use backend `riskAssessment` for trusted persisted decisions;
+- map server errors to rejected promises.
+
+The current frontend still requires a small API-adapter change. Backend changes alone cannot make a browser that never sends HTTP requests use the server.
+
+## Tests
+
+Install test dependencies:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest
 ```
 
-测试覆盖三档预设分数、LTV 硬规则、登录与权限、提交、补件、人工决定、审计和不落库的参数预演。
+Run:
 
-## 演示范围说明
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
 
-这是教学/演示系统，所有数据和规则均为合成或模拟内容，不代表真实金融机构政策。当前未实现真实 Singpass/MyInfo/征信、真实文件存储、OCR、注册、JWT 或生产级密钥管理。
+Regenerate the checked-in API contract:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_openapi.py
+```
+
+The suite covers:
+
+- reference scores and LTV hard rules;
+- authentication and role checks;
+- the complete submit/review/supplement/approve workflow;
+- atomic reviewing status after submission;
+- PATCH null behavior;
+- saved-versus-preview risk semantics;
+- reproducible Mock APIs;
+- `cpfPulled`;
+- filename-only and structured supplement payloads;
+- frontend-ready audit fields.
+
+## Production limitations
+
+The current version is for teaching and demonstration. Before production use:
+
+- replace SQLite with managed PostgreSQL;
+- replace demo tokens and `X-Demo-Role` with production authentication;
+- configure secrets and exact CORS origins;
+- disable or strictly protect `/demo/reset`;
+- use real object storage and malware scanning for uploaded files;
+- add rate limiting, monitoring, backups, and formal database migrations;
+- complete official onboarding before any real Singpass/MyInfo integration.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,13 @@ from sqlalchemy.orm import Session
 from .auth import DemoAccount, current_user, login, require_role
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
+from .migrations import ensure_schema_compatibility
+from .mock_provider import (
+    dataset_label,
+    list_personas,
+    provider_data,
+    snapshot_version,
+)
 from .models import Application, AuditLog, Supplement
 from .risk_engine import MODEL_VERSION, RULES_VERSION
 from .schemas import (
@@ -18,14 +26,15 @@ from .schemas import (
     ApplicationOut,
     ApplicationPatch,
     AuditList,
-    AuditLogOut,
     DecisionRequest,
     EvaluateRequest,
     HealthOut,
     LoginRequest,
     LoginResponse,
+    MockPersonaList,
+    MockRetrievalOut,
+    MockRetrievalRequest,
     RiskAssessmentOut,
-    SupplementOut,
     SupplementRequest,
     UserOut,
 )
@@ -34,10 +43,13 @@ from .service import (
     add_audit,
     api_error,
     application_out,
+    audit_out,
     change_status,
     create_application,
     evaluate_application,
     get_application,
+    latest_evaluation,
+    risk_out,
     submit_application,
     update_application,
 )
@@ -46,6 +58,7 @@ from .service import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility(engine)
     if settings.seed_demo:
         with SessionLocal() as db:
             seed_demo(db)
@@ -54,10 +67,12 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="AI Car Loan Approval & Risk Control Agent API",
-    version="1.0.0",
+    version="1.1.0",
     description=(
-        "Backend for the Applicant → validation → risk evaluation → "
-        "Loan Officer decision → status → audit workflow."
+        "Backend contract for the English modular frontend. A successful submission "
+        "is validated and assessed atomically, then returned in reviewing status. "
+        "GET risk-assessment returns the latest saved assessment; POST evaluate "
+        "provides explicit saved or preview evaluation behavior."
     ),
     lifespan=lifespan,
 )
@@ -97,11 +112,14 @@ def auth_me(user: DemoAccount = Depends(current_user)) -> UserOut:
     tags=["applications"],
 )
 def applications_create(
-    payload: ApplicationCreate,
+    payload: ApplicationCreate | None = None,
     db: Session = Depends(get_db),
     user: DemoAccount = Depends(require_role("applicant")),
 ) -> ApplicationOut:
-    return application_out(db, create_application(db, payload, user))
+    return application_out(
+        db,
+        create_application(db, payload or ApplicationCreate(), user),
+    )
 
 
 @app.get("/applications", response_model=ApplicationList, tags=["applications"])
@@ -210,8 +228,16 @@ def applications_risk(
     user: DemoAccount = Depends(current_user),
 ) -> RiskAssessmentOut:
     application = get_application(db, application_id, user)
-    result = evaluate_application(db, application, persist=False)
-    return RiskAssessmentOut(**result)
+    saved = latest_evaluation(db, application.id)
+    if saved is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "risk_assessment_not_found",
+            "No saved risk assessment exists for this application",
+        )
+    result = risk_out(saved)
+    assert result is not None
+    return result
 
 
 def _make_decision(
@@ -221,11 +247,11 @@ def _make_decision(
     user: DemoAccount,
 ) -> ApplicationOut:
     application = get_application(db, application_id, user)
-    if application.status not in {"submitted", "reviewing"}:
+    if application.status != "reviewing":
         raise api_error(
             status.HTTP_409_CONFLICT,
             "invalid_status_transition",
-            "Only submitted or reviewing applications can be decided",
+            "Only applications under review can receive an officer decision",
         )
     mapping = {
         "approve": ("approved", "Approve", "approved"),
@@ -233,9 +259,10 @@ def _make_decision(
         "request_info": ("need_info", None, "information_requested"),
     }
     target, final_decision, action = mapping[payload.decision]
-    application.status = target
+    change_status(application, target)
     application.officerNote = payload.note
     application.decision = final_decision
+    application.updatedAt = datetime.now(UTC).replace(tzinfo=None)
     if payload.decision == "request_info":
         application.needInfoReason = payload.note
     add_audit(
@@ -281,7 +308,7 @@ def applications_decisions_alias(
 
 @app.post(
     "/applications/{application_id}/supplements",
-    response_model=SupplementOut,
+    response_model=ApplicationOut,
     status_code=status.HTTP_201_CREATED,
     tags=["supplements"],
 )
@@ -290,7 +317,7 @@ def applications_supplement(
     payload: SupplementRequest,
     db: Session = Depends(get_db),
     user: DemoAccount = Depends(require_role("applicant")),
-) -> SupplementOut:
+) -> ApplicationOut:
     application = get_application(db, application_id, user)
     if application.status != "need_info":
         raise api_error(
@@ -298,25 +325,36 @@ def applications_supplement(
             "invalid_status_transition",
             "Supplements are accepted only when information is requested",
         )
+    files = [
+        {
+            "name": item,
+            "size": 0,
+            "contentType": "application/pdf",
+        }
+        if isinstance(item, str)
+        else item.model_dump()
+        for item in payload.files
+    ]
     row = Supplement(
         applicationId=application.id,
         note=payload.note.strip(),
-        files=[item.model_dump() for item in payload.files],
+        files=files,
     )
     db.add(row)
     application.supplementNote = payload.note.strip()
     change_status(application, "reviewing")
+    application.updatedAt = datetime.now(UTC).replace(tzinfo=None)
     add_audit(
         db,
         application,
         "information_submitted",
         user,
         payload.note.strip() or "Supplement metadata submitted",
-        {"files": [item.model_dump() for item in payload.files]},
+        {"files": files},
     )
     db.commit()
-    db.refresh(row)
-    return SupplementOut.model_validate(row)
+    db.refresh(application)
+    return application_out(db, application)
 
 
 @app.get("/audit-logs", response_model=AuditList, tags=["audit"])
@@ -331,8 +369,146 @@ def audit_logs(
     if application_id:
         statement = statement.where(AuditLog.applicationId == application_id)
     rows = list(db.scalars(statement.order_by(AuditLog.createdAt.desc())).all())
-    return AuditList(
-        items=[AuditLogOut.model_validate(row) for row in rows], total=len(rows)
+    return AuditList(items=[audit_out(row) for row in rows], total=len(rows))
+
+
+@app.get("/mock/personas", response_model=MockPersonaList, tags=["mock-data"])
+def mock_personas(
+    _: DemoAccount = Depends(current_user),
+) -> MockPersonaList:
+    return MockPersonaList(
+        snapshotVersion=snapshot_version(),
+        label=dataset_label(),
+        items=list_personas(),
+    )
+
+
+def _retrieve_mock_data(
+    application_id: str,
+    payload: MockRetrievalRequest,
+    provider_key: str,
+    provider_name: str,
+    pulled_field: str,
+    audit_action: str,
+    db: Session,
+    user: DemoAccount,
+) -> MockRetrievalOut:
+    application = get_application(db, application_id, user)
+    if application.status != "draft":
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "application_locked",
+            "Mock data can only be retrieved for a draft application",
+        )
+
+    try:
+        values = provider_data(payload.personaId, provider_key)
+    except KeyError:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "persona_not_found",
+            f"Unknown synthetic persona: {payload.personaId}",
+        ) from None
+
+    for field, value in values.items():
+        setattr(application, field, value)
+    setattr(application, pulled_field, True)
+    if provider_key == "myinfo":
+        application.consent = True
+    retrieved_at = datetime.now(UTC).replace(tzinfo=None)
+    application.updatedAt = retrieved_at
+    add_audit(
+        db,
+        application,
+        audit_action,
+        user,
+        f"{provider_name} returned frozen synthetic test data",
+        {
+            "provider": provider_name,
+            "personaId": payload.personaId,
+            "snapshotVersion": snapshot_version(),
+            "verified": True,
+        },
+    )
+    db.commit()
+    db.refresh(application)
+    return MockRetrievalOut(
+        provider=provider_name,
+        personaId=payload.personaId,
+        snapshotVersion=snapshot_version(),
+        label=dataset_label(),
+        retrievedAt=retrieved_at,
+        verified=True,
+        application=application_out(db, application),
+    )
+
+
+@app.post(
+    "/applications/{application_id}/mock/myinfo",
+    response_model=MockRetrievalOut,
+    tags=["mock-data"],
+)
+def mock_myinfo(
+    application_id: str,
+    payload: MockRetrievalRequest,
+    db: Session = Depends(get_db),
+    user: DemoAccount = Depends(require_role("applicant")),
+) -> MockRetrievalOut:
+    return _retrieve_mock_data(
+        application_id,
+        payload,
+        "myinfo",
+        "myinfo_sandbox",
+        "myinfoPulled",
+        "myinfo_retrieved",
+        db,
+        user,
+    )
+
+
+@app.post(
+    "/applications/{application_id}/mock/cpf",
+    response_model=MockRetrievalOut,
+    tags=["mock-data"],
+)
+def mock_cpf(
+    application_id: str,
+    payload: MockRetrievalRequest,
+    db: Session = Depends(get_db),
+    user: DemoAccount = Depends(require_role("applicant")),
+) -> MockRetrievalOut:
+    return _retrieve_mock_data(
+        application_id,
+        payload,
+        "cpf",
+        "cpf_sandbox",
+        "cpfPulled",
+        "cpf_retrieved",
+        db,
+        user,
+    )
+
+
+@app.post(
+    "/applications/{application_id}/mock/credit-report",
+    response_model=MockRetrievalOut,
+    tags=["mock-data"],
+)
+def mock_credit_report(
+    application_id: str,
+    payload: MockRetrievalRequest,
+    db: Session = Depends(get_db),
+    user: DemoAccount = Depends(require_role("applicant")),
+) -> MockRetrievalOut:
+    return _retrieve_mock_data(
+        application_id,
+        payload,
+        "creditReport",
+        "credit_report_sandbox",
+        "creditPulled",
+        "credit_report_retrieved",
+        db,
+        user,
     )
 
 

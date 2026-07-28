@@ -10,6 +10,7 @@ ApplicationStatus = Literal[
     "draft", "submitted", "reviewing", "need_info", "approved", "rejected"
 ]
 Role = Literal["applicant", "officer"]
+PersonaId = Literal["low", "medium", "high"]
 
 
 class ApiModel(BaseModel):
@@ -38,6 +39,7 @@ class LoginResponse(ApiModel):
 class ApplicationFields(ApiModel):
     consent: bool = False
     myinfoPulled: bool = False
+    cpfPulled: bool = False
     creditPulled: bool = False
 
     name: str = ""
@@ -75,6 +77,7 @@ class ApplicationCreate(ApplicationFields):
 class ApplicationPatch(ApiModel):
     consent: bool | None = None
     myinfoPulled: bool | None = None
+    cpfPulled: bool | None = None
     creditPulled: bool | None = None
     name: str | None = None
     nric: str | None = None
@@ -130,6 +133,12 @@ class RiskAssessmentOut(ApiModel):
     modelVersion: str
 
 
+class SupplementFile(ApiModel):
+    name: str = Field(min_length=1, max_length=255)
+    size: int = Field(default=0, ge=0)
+    contentType: str = Field(default="application/pdf", max_length=120)
+
+
 class ApplicationOut(ApplicationFields):
     id: str
     applicantId: str
@@ -141,6 +150,7 @@ class ApplicationOut(ApplicationFields):
     officerNote: str
     needInfoReason: str
     supplementNote: str
+    supplementFiles: list[SupplementFile] = Field(default_factory=list)
     riskAssessment: RiskAssessmentOut | None = None
 
 
@@ -167,15 +177,9 @@ class DecisionRequest(ApiModel):
         return value
 
 
-class SupplementFile(ApiModel):
-    name: str = Field(min_length=1, max_length=255)
-    size: int = Field(ge=0)
-    contentType: str = Field(default="application/octet-stream", max_length=120)
-
-
 class SupplementRequest(ApiModel):
     note: str = Field(default="", max_length=2000)
-    files: list[SupplementFile] = Field(default_factory=list, max_length=10)
+    files: list[SupplementFile | str] = Field(default_factory=list, max_length=10)
 
 
 class SupplementOut(ApiModel):
@@ -189,12 +193,16 @@ class SupplementOut(ApiModel):
 class AuditLogOut(ApiModel):
     id: int
     applicationId: str
+    appId: str
     action: str
+    actionCode: str
     actor: str
     actorRole: str
     createdAt: datetime
+    ts: int
     note: str
     modelVersion: str
+    metadata: dict[str, Any]
     metadataJson: dict[str, Any]
 
 
@@ -209,3 +217,27 @@ class HealthOut(ApiModel):
     rulesVersion: str
     modelVersion: str
 
+
+class MockRetrievalRequest(ApiModel):
+    personaId: PersonaId = "low"
+
+
+class MockPersonaSummary(ApiModel):
+    personaId: PersonaId
+    displayName: str
+
+
+class MockPersonaList(ApiModel):
+    snapshotVersion: str
+    label: str
+    items: list[MockPersonaSummary]
+
+
+class MockRetrievalOut(ApiModel):
+    provider: Literal["myinfo_sandbox", "cpf_sandbox", "credit_report_sandbox"]
+    personaId: PersonaId
+    snapshotVersion: str
+    label: str
+    retrievedAt: datetime
+    verified: bool = True
+    application: ApplicationOut

@@ -15,6 +15,7 @@ from app.main import app
 LOW_PAYLOAD = {
     "consent": True,
     "myinfoPulled": True,
+    "cpfPulled": True,
     "creditPulled": True,
     "name": "Test Applicant",
     "nric": "S8••••99Z",
@@ -120,6 +121,16 @@ def test_complete_submit_review_supplement_approve_flow(client: TestClient) -> N
         headers=auth_header(applicant_token),
     )
     assert supplement_response.status_code == 201
+    supplemented = supplement_response.json()
+    assert supplemented["status"] == "reviewing"
+    assert supplemented["supplementNote"] == "Statements attached."
+    assert supplemented["supplementFiles"] == [
+        {
+            "name": "bank_statement_2026Q2.pdf",
+            "size": 143000,
+            "contentType": "application/pdf",
+        }
+    ]
 
     approve_response = client.post(
         f"/applications/{application_id}/decision",
@@ -137,7 +148,8 @@ def test_complete_submit_review_supplement_approve_flow(client: TestClient) -> N
         headers=auth_header(officer_token),
     )
     assert audit_response.status_code == 200
-    actions = {item["action"] for item in audit_response.json()["items"]}
+    items = audit_response.json()["items"]
+    actions = {item["actionCode"] for item in items}
     assert {
         "draft_created",
         "submitted",
@@ -146,6 +158,12 @@ def test_complete_submit_review_supplement_approve_flow(client: TestClient) -> N
         "information_submitted",
         "approved",
     }.issubset(actions)
+    submitted_audit = next(item for item in items if item["actionCode"] == "submitted")
+    assert submitted_audit["applicationId"] == application_id
+    assert submitted_audit["appId"] == application_id
+    assert submitted_audit["action"] == "Submitted"
+    assert isinstance(submitted_audit["ts"], int)
+    assert submitted_audit["metadata"] == submitted_audit["metadataJson"]
 
 
 def test_role_and_state_guards(client: TestClient) -> None:
@@ -205,3 +223,175 @@ def test_preview_evaluation_does_not_write_audit(client: TestClient) -> None:
     assert preview.json()["score"] > 23
     assert before == after
 
+
+def test_patch_handles_explicit_null_without_database_error(client: TestClient) -> None:
+    applicant_token = token(client, "applicant")
+    application_id = client.post(
+        "/applications",
+        json=LOW_PAYLOAD,
+        headers=auth_header(applicant_token),
+    ).json()["id"]
+
+    nullable_response = client.patch(
+        f"/applications/{application_id}",
+        json={"incomeVerified": None},
+        headers=auth_header(applicant_token),
+    )
+    assert nullable_response.status_code == 200
+    assert nullable_response.json()["incomeVerified"] is None
+
+    non_nullable_response = client.patch(
+        f"/applications/{application_id}",
+        json={"name": None, "cpfPulled": None},
+        headers=auth_header(applicant_token),
+    )
+    assert non_nullable_response.status_code == 422
+    assert non_nullable_response.json()["detail"]["code"] == "null_not_allowed"
+
+    get_response = client.get(
+        f"/applications/{application_id}",
+        headers=auth_header(applicant_token),
+    )
+    assert get_response.status_code == 200
+    assert get_response.json()["name"] == LOW_PAYLOAD["name"]
+
+
+def test_risk_assessment_get_returns_latest_saved_result(client: TestClient) -> None:
+    applicant_token = token(client, "applicant")
+    officer_token = token(client, "officer")
+    application_id = client.post(
+        "/applications",
+        json=LOW_PAYLOAD,
+        headers=auth_header(applicant_token),
+    ).json()["id"]
+
+    missing = client.get(
+        f"/applications/{application_id}/risk-assessment",
+        headers=auth_header(applicant_token),
+    )
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "risk_assessment_not_found"
+
+    submitted = client.post(
+        f"/applications/{application_id}/submit",
+        headers=auth_header(applicant_token),
+    ).json()
+    saved_before = client.get(
+        f"/applications/{application_id}/risk-assessment",
+        headers=auth_header(officer_token),
+    ).json()
+    preview = client.post(
+        f"/applications/{application_id}/evaluate",
+        json={
+            "persist": False,
+            "overrides": {"incomeVerified": 2500, "downPayment": 30000},
+        },
+        headers=auth_header(officer_token),
+    ).json()
+    saved_after = client.get(
+        f"/applications/{application_id}/risk-assessment",
+        headers=auth_header(officer_token),
+    ).json()
+
+    assert submitted["status"] == "reviewing"
+    assert preview["score"] > saved_before["score"]
+    assert saved_after == saved_before
+
+
+def test_fixed_mock_apis_are_reproducible(client: TestClient) -> None:
+    applicant_token = token(client, "applicant")
+    headers = auth_header(applicant_token)
+    application_id = client.post("/applications", headers=headers).json()["id"]
+
+    personas = client.get("/mock/personas", headers=headers)
+    assert personas.status_code == 200
+    assert personas.json()["snapshotVersion"] == "sg-synthetic-personas-v1.0.0"
+    assert [item["personaId"] for item in personas.json()["items"]] == [
+        "low",
+        "medium",
+        "high",
+    ]
+
+    first_myinfo = client.post(
+        f"/applications/{application_id}/mock/myinfo",
+        json={"personaId": "low"},
+        headers=headers,
+    )
+    second_myinfo = client.post(
+        f"/applications/{application_id}/mock/myinfo",
+        json={"personaId": "low"},
+        headers=headers,
+    )
+    cpf = client.post(
+        f"/applications/{application_id}/mock/cpf",
+        json={"personaId": "low"},
+        headers=headers,
+    )
+    credit = client.post(
+        f"/applications/{application_id}/mock/credit-report",
+        json={"personaId": "low"},
+        headers=headers,
+    )
+
+    assert first_myinfo.status_code == 200
+    assert first_myinfo.json()["application"]["name"] == "Amelia Tan"
+    assert first_myinfo.json()["application"]["consent"] is True
+    assert (
+        second_myinfo.json()["application"]["nric"]
+        == first_myinfo.json()["application"]["nric"]
+    )
+    assert cpf.json()["application"]["incomeVerified"] == 6000
+    assert cpf.json()["application"]["cpfPulled"] is True
+    assert credit.json()["application"]["existingMonthly"] == 500
+    assert credit.json()["application"]["creditPulled"] is True
+
+
+def test_supplement_accepts_frontend_filename_list(client: TestClient) -> None:
+    applicant_token = token(client, "applicant")
+    officer_token = token(client, "officer")
+    application_id = client.post(
+        "/applications",
+        json=LOW_PAYLOAD,
+        headers=auth_header(applicant_token),
+    ).json()["id"]
+    client.post(
+        f"/applications/{application_id}/submit",
+        headers=auth_header(applicant_token),
+    )
+    client.post(
+        f"/applications/{application_id}/decision",
+        json={"decision": "request_info", "note": "Provide a bank statement."},
+        headers=auth_header(officer_token),
+    )
+
+    response = client.post(
+        f"/applications/{application_id}/supplements",
+        json={"note": "Attached.", "files": ["bank_statement_1.pdf"]},
+        headers=auth_header(applicant_token),
+    )
+    assert response.status_code == 201
+    assert response.json()["supplementFiles"] == [
+        {
+            "name": "bank_statement_1.pdf",
+            "size": 0,
+            "contentType": "application/pdf",
+        }
+    ]
+
+
+def test_officer_decision_requires_reviewing_status(client: TestClient) -> None:
+    applicant_token = token(client, "applicant")
+    officer_token = token(client, "officer")
+    application_id = client.post(
+        "/applications",
+        json=LOW_PAYLOAD,
+        headers=auth_header(applicant_token),
+    ).json()["id"]
+
+    response = client.post(
+        f"/applications/{application_id}/decision",
+        json={"decision": "approve", "note": "Should not be accepted while draft."},
+        headers=auth_header(officer_token),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "invalid_status_transition"
