@@ -9,12 +9,33 @@ export const fmtTime = timestamp => {
 };
 const tag = status => `<span class="tag ${STATUS[status]?.cls || 't-gray'}">${STATUS[status]?.label || status}</span>`;
 const button = (label, action, extra = '', data = '') => `<button class="btn ${extra}" data-action="${action}" ${data}>${label}</button>`;
-const field = (app, key, label, type = 'text', readonly = false) => `
-  <label class="f"><span>${label}</span><input name="${key}" type="${type}" value="${esc(app[key])}" ${readonly ? 'readonly' : ''}></label>`;
+const requiredApplicationFields = new Set([
+  'name', 'nric', 'employer', 'empMonths', 'incomeDeclared', 'carPrice', 'loanAmount', 'downPayment'
+]);
+const field = (app, key, label, type = 'text', readonly = false) => {
+  const required = requiredApplicationFields.has(key);
+  return `<label class="f ${readonly ? 'readonly-field' : ''}">
+    <span class="field-label">${label}${required ? ' <abbr class="required-mark" title="required">*</abbr>' : ''}</span>
+    <input name="${key}" type="${type}" value="${esc(app[key])}" ${readonly ? 'readonly' : ''} ${required ? 'aria-required="true"' : ''}>
+    ${readonly ? '<small class="field-help">Demo CPF data · Read only</small>' : ''}
+  </label>`;
+};
 const select = (app, key, label, options) => `
-  <label class="f"><span>${label}</span><select name="${key}">
+  <label class="f"><span class="field-label">${label}</span><select name="${key}">
     ${options.map(option => `<option ${String(app[key]) === String(option) ? 'selected' : ''}>${option}</option>`).join('')}
   </select></label>`;
+const formStepDetails = [
+  ['Applicant details', 'Provide your identity details and authorize simulated data retrieval.'],
+  ['Employment & income', 'Add your employment information and retrieve a simulated contribution record.'],
+  ['Debt & credit', 'Review existing commitments using synthetic credit information.'],
+  ['Vehicle & loan', 'Enter the vehicle and financing details for this application.'],
+  ['Review & submit', 'Review your information and confirm the synthetic application before submission.']
+];
+const reviewText = value => {
+  const text = String(value ?? '').trim();
+  return text ? esc(text) : '—';
+};
+const reviewMoney = value => value === null || value === undefined || value === '' ? '—' : money(value);
 
 export function homeView() {
   return `<section class="hero" aria-labelledby="home-title">
@@ -183,9 +204,13 @@ export function applicantHomeView(apps) {
 }
 
 function stepOne(app) {
-  return `<div class="note"><b>MyInfo Sandbox</b><br>Authorize a simulated retrieval of identity details. No real government service is contacted.</div>
-    <div class="btnrow" style="margin-bottom:16px">${button('Use MyInfo simulated authorization', 'pull-myinfo', 'pri')}${button('View authorization scope', 'toggle-scope')}</div>
-    <div id="scope-note" class="note" hidden>Scope: name, masked NRIC / FIN, age, residency status, phone number, education, and marital status.</div>
+  return `<div class="data-source-panel">
+      <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated MyInfo</h3>
+        <p>Use simulated government data to prefill eligible identity fields. No real government service is contacted.</p></div>
+      <span class="source-status ${app.myinfoPulled ? 'is-ready' : ''}">${app.myinfoPulled ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
+      <div class="data-source-actions">${button('Use MyInfo simulated authorization', 'pull-myinfo', 'source-action')}${button('View authorization scope', 'toggle-scope', 'source-secondary')}</div>
+    </div>
+    <div id="scope-note" class="note scope-note" hidden>Scope: name, masked NRIC / FIN, age, residency status, phone number, education, and marital status.</div>
     <div class="grid2">${field(app, 'name', 'Full name')}${field(app, 'nric', 'NRIC / FIN')}
       ${field(app, 'age', 'Age', 'number')}${select(app, 'residency', 'Residency status', ['Singapore Citizen', 'Permanent Resident', 'Work Pass Holder'])}
       ${field(app, 'phone', 'Mobile number')}${field(app, 'education', 'Highest education')}
@@ -195,19 +220,28 @@ function stepOne(app) {
 }
 
 function stepTwo(app) {
-  return `<div class="grid2">${select(app, 'empType', 'Employment type', ['Full-time employee', 'Self-employed / part-time', 'Contract employee'])}
+  return `<div class="data-source-panel compact-source">
+      <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated CPF contribution record</h3>
+        <p>Retrieve demo contribution data to populate verified monthly income.</p></div>
+      <span class="source-status ${app.cpfPulled ? 'is-ready' : ''}">${app.cpfPulled ? 'Retrieved · Read-only value available' : 'Demo data · Not retrieved'}</span>
+      <div class="data-source-actions">${button('Retrieve simulated CPF contribution record', 'pull-cpf', 'source-action')}</div>
+    </div>
+    <div class="grid2">${select(app, 'empType', 'Employment type', ['Full-time employee', 'Self-employed / part-time', 'Contract employee'])}
     ${field(app, 'employer', 'Employer / business')}${field(app, 'title', 'Job title')}${field(app, 'empMonths', 'Months in current employment', 'number')}
-    ${field(app, 'incomeDeclared', 'Declared monthly income (S$)', 'number')}${field(app, 'incomeVerified', 'Verified monthly income (S$)', 'number', true)}</div>
-    <div class="btnrow">${button('Retrieve simulated CPF contribution record', 'pull-cpf')}</div>`;
+    ${field(app, 'incomeDeclared', 'Declared monthly income (S$)', 'number')}${field(app, 'incomeVerified', 'Verified monthly income (S$)', 'number', true)}</div>`;
 }
 
 function stepThree(app) {
-  return `<div class="btnrow" style="margin-bottom:18px">${button('Authorize simulated credit report retrieval', 'pull-credit')}</div>
+  return `<div class="data-source-panel compact-source">
+      <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated credit report</h3>
+        <p>Use synthetic credit data to prefill the commitments below. No credit bureau is contacted.</p></div>
+      <span class="source-status ${app.creditPulled ? 'is-ready' : ''}">${app.creditPulled ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
+      <div class="data-source-actions">${button('Authorize simulated credit report retrieval', 'pull-credit', 'source-action')}</div>
+    </div>
     <div class="grid2">${field(app, 'existingMonthly', 'Existing monthly repayments (S$)', 'number')}
       ${field(app, 'outstanding', 'Total outstanding debt (S$)', 'number')}
       ${field(app, 'latePayments', 'Late payments in the last 12 months', 'number')}
-      ${field(app, 'otherLoans', 'Other active loans', 'number')}</div>
-    <div class="note">The sandbox returns synthetic credit values only. No credit bureau is contacted.</div>`;
+      ${field(app, 'otherLoans', 'Other active loans', 'number')}</div>`;
 }
 
 function stepFour(app, assessment) {
@@ -225,35 +259,74 @@ function stepFour(app, assessment) {
 
 function stepFive(app, assessment) {
   const missing = requiredMissing(app);
-  return `<div class="grid2">
-    <div class="fgroup"><b>Applicant</b><div class="chk"><span>Name</span><span>${esc(app.name)}</span></div>
-      <div class="chk"><span>NRIC / FIN</span><span class="mono">${esc(app.nric)}</span></div>
-      <div class="chk"><span>Employer</span><span>${esc(app.employer)}</span></div>
-      <div class="chk"><span>Verified monthly income</span><span>${money(app.incomeVerified)}</span></div></div>
-    <div class="fgroup"><b>Loan</b><div class="chk"><span>Vehicle</span><span>${esc(app.carModel)}</span></div>
-      <div class="chk"><span>Price</span><span>${money(app.carPrice)}</span></div>
-      <div class="chk"><span>Loan amount</span><span>${money(app.loanAmount)}</span></div>
-      <div class="chk"><span>Indicative risk band</span><span class="tag ${assessment.level === 'Low' ? 't-ok' : assessment.level === 'High' ? 't-bad' : 't-warn'}">${assessment.level}</span></div></div>
+  return `<div class="review-grid">
+    <section class="review-group"><h3>Applicant details</h3>
+      <div class="review-row"><span>Full name</span><strong>${reviewText(app.name)}</strong></div>
+      <div class="review-row"><span>NRIC / FIN</span><strong class="mono">${reviewText(app.nric)}</strong></div>
+      <div class="review-row"><span>Residency</span><strong>${reviewText(app.residency)}</strong></div>
+      <div class="review-row"><span>Mobile number</span><strong>${reviewText(app.phone)}</strong></div>
+    </section>
+    <section class="review-group"><h3>Employment and income</h3>
+      <div class="review-row"><span>Employer</span><strong>${reviewText(app.employer)}</strong></div>
+      <div class="review-row"><span>Job title</span><strong>${reviewText(app.title)}</strong></div>
+      <div class="review-row"><span>Months employed</span><strong>${reviewText(app.empMonths)}</strong></div>
+      <div class="review-row"><span>Declared monthly income</span><strong>${reviewMoney(app.incomeDeclared)}</strong></div>
+      <div class="review-row"><span>Verified monthly income</span><strong>${reviewMoney(app.incomeVerified)}</strong></div>
+    </section>
+    <section class="review-group"><h3>Debt and credit</h3>
+      <div class="review-row"><span>Monthly repayments</span><strong>${reviewMoney(app.existingMonthly)}</strong></div>
+      <div class="review-row"><span>Outstanding debt</span><strong>${reviewMoney(app.outstanding)}</strong></div>
+      <div class="review-row"><span>Late payments</span><strong>${reviewText(app.latePayments)}</strong></div>
+      <div class="review-row"><span>Other active loans</span><strong>${reviewText(app.otherLoans)}</strong></div>
+    </section>
+    <section class="review-group"><h3>Vehicle and loan request</h3>
+      <div class="review-row"><span>Vehicle</span><strong>${reviewText(app.carModel)}</strong></div>
+      <div class="review-row"><span>Vehicle price</span><strong>${reviewMoney(app.carPrice)}</strong></div>
+      <div class="review-row"><span>Open Market Value</span><strong>${reviewMoney(app.omv)}</strong></div>
+      <div class="review-row"><span>Down payment</span><strong>${reviewMoney(app.downPayment)}</strong></div>
+      <div class="review-row"><span>Loan amount</span><strong>${reviewMoney(app.loanAmount)}</strong></div>
+      <div class="review-row"><span>Tenure</span><strong>${app.tenureYears ? `${reviewText(app.tenureYears)} years` : '—'}</strong></div>
+      <div class="review-row"><span>Indicative risk band</span><strong><span class="tag ${assessment.level === 'Low' ? 't-ok' : assessment.level === 'High' ? 't-bad' : 't-warn'}">${esc(assessment.level)}</span></strong></div>
+    </section>
   </div>
-  ${missing.length ? `<div class="note bad">Complete these required fields before submission: ${missing.join(', ')}.</div>` : ''}
-  ${!app.consent ? '<div class="note bad">Applicant authorization is required before submission.</div>' : ''}
-  <div class="note">By submitting, you confirm that all entered information is complete and accurate for this synthetic demonstration.</div>`;
+  ${missing.length ? `<div class="note bad form-alert" role="alert">Complete these required fields before submission: ${missing.join(', ')}.</div>` : ''}
+  ${!app.consent ? '<div class="note bad form-alert" role="alert">Applicant authorization is required before submission.</div>' : ''}
+  <div class="submission-notice"><b>Synthetic demonstration</b><span>By submitting, you confirm that all entered information is complete and accurate for this synthetic demonstration.</span></div>`;
 }
 
 export function formView({ app, step, assessment }) {
   const panels = [stepOne(app), stepTwo(app), stepThree(app), stepFour(app, assessment), stepFive(app, assessment)];
-  return `<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px">
-    <div><h1>Car loan application</h1><p class="sub mono">${app.id} · ${STATUS[app.status].label}</p></div>
-    <span style="flex:1"></span><div class="btnrow"><span class="muted">Load preset:</span>
-      ${button('Low risk', 'load-preset', 'sm', 'data-kind="low"')}${button('Medium risk', 'load-preset', 'sm', 'data-kind="medium"')}${button('High risk', 'load-preset', 'sm', 'data-kind="high"')}</div>
-  </div>
-  <div class="steps">${STEP_NAMES.map((name, index) => `<div class="step ${index + 1 === step ? 'on' : index + 1 < step ? 'done' : ''}"><span>${index + 1}</span>${name}</div>`).join('')}</div>
-  <form id="application-form" data-id="${app.id}" class="card">${panels[step - 1]}
-    <div class="hr"></div><div class="btnrow">
-      ${step > 1 ? button('Previous', 'change-step', '', 'data-delta="-1"') : button('Back to list', 'navigate', '', 'data-route="#/apply-home"')}
-      ${step < 5 ? button('Next', 'change-step', 'pri', 'data-delta="1"') : button('Submit application', 'submit-application', 'pri')}
-      ${button('Save draft', 'save-draft')}</div>
-  </form>`;
+  const [stepTitle, stepDescription] = formStepDetails[step - 1];
+  const primaryAction = step < STEP_NAMES.length
+    ? button('Continue', 'change-step', 'pri form-primary', 'data-delta="1"')
+    : button('Submit application', 'submit-application', 'pri form-primary');
+  return `<section class="application-flow" aria-labelledby="application-page-title">
+    <div class="form-top-nav">${button('← Back to applications', 'navigate', 'form-back-link', 'data-route="#/apply-home"')}</div>
+    <header class="form-page-header">
+      <div><p class="eyebrow">New application</p><h1 id="application-page-title">Apply for a car loan</h1>
+        <p>Complete the steps below. You can review your information before submission.</p>
+        <span class="application-reference mono">${esc(app.id)} · ${esc(STATUS[app.status].label)}</span></div>
+      <div class="demo-preset-panel"><span>Demo data presets</span><div class="preset-actions">
+        ${button('Low risk', 'load-preset', 'sm', 'data-kind="low"')}${button('Medium risk', 'load-preset', 'sm', 'data-kind="medium"')}${button('High risk', 'load-preset', 'sm', 'data-kind="high"')}
+      </div></div>
+    </header>
+    <nav class="form-progress" aria-label="Application progress">
+      <div class="progress-summary"><span>Step ${step} of ${STEP_NAMES.length}</span><strong>${stepTitle}</strong></div>
+      <ol class="form-stepper">${STEP_NAMES.map((name, index) => {
+        const number = index + 1;
+        const state = number === step ? 'current' : number < step ? 'complete' : 'future';
+        return `<li class="${state}" ${number === step ? 'aria-current="step"' : ''}><span class="step-marker">${number < step ? '✓' : number}</span><span class="step-name">${name}</span></li>`;
+      }).join('')}</ol>
+    </nav>
+    <form id="application-form" data-id="${esc(app.id)}" class="application-form-card">
+      <div class="form-section-heading"><p>Step ${step}</p><h2 id="form-step-heading">${stepTitle}</h2><span>${stepDescription}</span></div>
+      <div class="form-step-content">${panels[step - 1]}</div>
+      <footer class="form-actions">
+        <div class="form-actions-back">${step > 1 ? button('Back', 'change-step', 'form-secondary', 'data-delta="-1"') : ''}</div>
+        <div class="form-actions-main">${button('Save draft', 'save-draft', 'form-save')}${primaryAction}</div>
+      </footer>
+    </form>
+  </section>`;
 }
 
 export function statusView(app, logs) {
