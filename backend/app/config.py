@@ -20,6 +20,7 @@ class Settings:
         for origin in os.getenv(
             "CAR_LOAN_CORS_ORIGINS",
             "http://127.0.0.1:5500,http://localhost:5500,"
+            "http://127.0.0.1:5510,http://localhost:5510,"
             "http://127.0.0.1:3000,http://localhost:3000",
         ).split(",")
         if origin.strip()
