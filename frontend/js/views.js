@@ -1,5 +1,7 @@
 import { STATUS, STEP_NAMES } from './demo-data.js';
-import { findDuplicates, money, n, pct, requiredMissing } from './risk-engine.js';
+import {
+  findDuplicates, money, n, pct, REQUIRED_APPLICATION_FIELDS, requiredMissing
+} from './risk-engine.js';
 
 export const esc = value => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
 export const fmtTime = timestamp => {
@@ -9,15 +11,22 @@ export const fmtTime = timestamp => {
 };
 const tag = status => `<span class="tag ${STATUS[status]?.cls || 't-gray'}">${STATUS[status]?.label || status}</span>`;
 const button = (label, action, extra = '', data = '') => `<button class="btn ${extra}" data-action="${action}" ${data}>${label}</button>`;
-const requiredApplicationFields = new Set([
-  'name', 'nric', 'employer', 'empMonths', 'incomeDeclared', 'carPrice', 'loanAmount', 'downPayment'
-]);
-const field = (app, key, label, type = 'text', readonly = false) => {
-  const required = requiredApplicationFields.has(key);
-  return `<label class="f ${readonly ? 'readonly-field' : ''}">
+const requiredApplicationFields = new Map(REQUIRED_APPLICATION_FIELDS.map(definition => [definition.key, definition]));
+const field = (app, key, label, type = 'text', readonly = false, errors = {}) => {
+  const definition = requiredApplicationFields.get(key);
+  const required = Boolean(definition && !readonly);
+  const error = errors[key];
+  const errorId = `error-${key}`;
+  const minimum = definition?.minExclusive !== undefined
+    ? 'min="0.01"'
+    : definition?.min !== undefined
+      ? `min="${definition.min}"`
+      : '';
+  return `<label class="f ${readonly ? 'readonly-field' : ''} ${error ? 'field-error' : ''}">
     <span class="field-label">${label}${required ? ' <abbr class="required-mark" title="required">*</abbr>' : ''}</span>
-    <input name="${key}" type="${type}" value="${esc(app[key])}" ${readonly ? 'readonly' : ''} ${required ? 'aria-required="true"' : ''}>
-    ${readonly ? '<small class="field-help">Demo CPF data · Read only</small>' : ''}
+    <input name="${key}" type="${type}" value="${esc(app[key])}" ${minimum} ${readonly ? 'readonly' : ''} ${required ? 'required aria-required="true"' : ''} ${error ? `aria-invalid="true" aria-describedby="${errorId}"` : ''}>
+    ${readonly ? '<small class="field-help">Retrieved from simulated CPF contribution data &middot; Read only</small>' : ''}
+    ${error ? `<small class="field-error-message" id="${errorId}">${esc(error)}</small>` : ''}
   </label>`;
 };
 const select = (app, key, label, options) => `
@@ -203,7 +212,8 @@ export function applicantHomeView(apps) {
   </section>`;
 }
 
-function stepOne(app) {
+function stepOne(app, errors) {
+  const consentError = errors.consent;
   return `<div class="data-source-panel">
       <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated MyInfo</h3>
         <p>Use simulated government data to prefill eligible identity fields. No real government service is contacted.</p></div>
@@ -211,45 +221,46 @@ function stepOne(app) {
       <div class="data-source-actions">${button('Use MyInfo simulated authorization', 'pull-myinfo', 'source-action')}${button('View authorization scope', 'toggle-scope', 'source-secondary')}</div>
     </div>
     <div id="scope-note" class="note scope-note" hidden>Scope: name, masked NRIC / FIN, age, residency status, phone number, education, and marital status.</div>
-    <div class="grid2">${field(app, 'name', 'Full name')}${field(app, 'nric', 'NRIC / FIN')}
-      ${field(app, 'age', 'Age', 'number')}${select(app, 'residency', 'Residency status', ['Singapore Citizen', 'Permanent Resident', 'Work Pass Holder'])}
-      ${field(app, 'phone', 'Mobile number')}${field(app, 'education', 'Highest education')}
-      ${field(app, 'marital', 'Marital status')}</div>
-    <label class="consent"><input name="consent" type="checkbox" style="width:auto" ${app.consent ? 'checked' : ''}>
-      I authorize the use of these synthetic details for this loan assessment.</label>`;
+    <div class="grid2">${field(app, 'name', 'Full name', 'text', false, errors)}${field(app, 'nric', 'NRIC / FIN', 'text', false, errors)}
+      ${field(app, 'age', 'Age', 'number', false, errors)}${select(app, 'residency', 'Residency status', ['Singapore Citizen', 'Permanent Resident', 'Work Pass Holder'])}
+      ${field(app, 'phone', 'Mobile number', 'text', false, errors)}${field(app, 'education', 'Highest education', 'text', false, errors)}
+      ${field(app, 'marital', 'Marital status', 'text', false, errors)}</div>
+    <label class="consent ${consentError ? 'field-error' : ''}"><input name="consent" type="checkbox" style="width:auto" required aria-required="true" ${app.consent ? 'checked' : ''} ${consentError ? 'aria-invalid="true" aria-describedby="error-consent"' : ''}>
+      <span>I authorize the use of these synthetic details for this loan assessment.
+      ${consentError ? `<small class="field-error-message" id="error-consent">${esc(consentError)}</small>` : ''}</span></label>`;
 }
 
-function stepTwo(app) {
+function stepTwo(app, errors) {
   return `<div class="data-source-panel compact-source">
       <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated CPF contribution record</h3>
-        <p>Retrieve demo contribution data to populate verified monthly income.</p></div>
-      <span class="source-status ${app.cpfPulled ? 'is-ready' : ''}">${app.cpfPulled ? 'Retrieved · Read-only value available' : 'Demo data · Not retrieved'}</span>
+        <p>Retrieve synthetic contribution data to verify monthly income. Employment details and declared income must still be entered by the applicant.</p></div>
+      <span class="source-status ${app.cpfPulled ? 'is-ready' : ''}">${app.cpfPulled ? 'Retrieved &middot; Verified income available' : 'Demo data &middot; Verified income not retrieved'}</span>
       <div class="data-source-actions">${button('Retrieve simulated CPF contribution record', 'pull-cpf', 'source-action')}</div>
     </div>
     <div class="grid2">${select(app, 'empType', 'Employment type', ['Full-time employee', 'Self-employed / part-time', 'Contract employee'])}
-    ${field(app, 'employer', 'Employer / business')}${field(app, 'title', 'Job title')}${field(app, 'empMonths', 'Months in current employment', 'number')}
-    ${field(app, 'incomeDeclared', 'Declared monthly income (S$)', 'number')}${field(app, 'incomeVerified', 'Verified monthly income (S$)', 'number', true)}</div>`;
+    ${field(app, 'employer', 'Employer / business', 'text', false, errors)}${field(app, 'title', 'Job title', 'text', false, errors)}${field(app, 'empMonths', 'Months in current employment', 'number', false, errors)}
+    ${field(app, 'incomeDeclared', 'Declared monthly income (S$)', 'number', false, errors)}${field(app, 'incomeVerified', 'Verified monthly income (S$)', 'number', true, errors)}</div>`;
 }
 
-function stepThree(app) {
+function stepThree(app, errors) {
   return `<div class="data-source-panel compact-source">
       <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated credit report</h3>
         <p>Use synthetic credit data to prefill the commitments below. No credit bureau is contacted.</p></div>
       <span class="source-status ${app.creditPulled ? 'is-ready' : ''}">${app.creditPulled ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
       <div class="data-source-actions">${button('Authorize simulated credit report retrieval', 'pull-credit', 'source-action')}</div>
     </div>
-    <div class="grid2">${field(app, 'existingMonthly', 'Existing monthly repayments (S$)', 'number')}
-      ${field(app, 'outstanding', 'Total outstanding debt (S$)', 'number')}
-      ${field(app, 'latePayments', 'Late payments in the last 12 months', 'number')}
-      ${field(app, 'otherLoans', 'Other active loans', 'number')}</div>`;
+    <div class="grid2">${field(app, 'existingMonthly', 'Existing monthly repayments (S$)', 'number', false, errors)}
+      ${field(app, 'outstanding', 'Total outstanding debt (S$)', 'number', false, errors)}
+      ${field(app, 'latePayments', 'Late payments in the last 12 months', 'number', false, errors)}
+      ${field(app, 'otherLoans', 'Other active loans', 'number', false, errors)}</div>`;
 }
 
-function stepFour(app, assessment) {
+function stepFour(app, assessment, errors) {
   const metrics = assessment.metrics;
   const exceeds = metrics.ltv > metrics.cap + 0.0001;
-  return `<div class="grid2">${field(app, 'carModel', 'Vehicle make and model')}${field(app, 'carPrice', 'Vehicle price (S$)', 'number')}
-    ${field(app, 'omv', 'Open Market Value (S$)', 'number')}${field(app, 'carAge', 'Vehicle age (years)', 'number')}
-    ${field(app, 'downPayment', 'Down payment (S$)', 'number')}${field(app, 'loanAmount', 'Loan amount (S$)', 'number')}
+  return `<div class="grid2">${field(app, 'carModel', 'Vehicle make and model', 'text', false, errors)}${field(app, 'carPrice', 'Vehicle price (S$)', 'number', false, errors)}
+    ${field(app, 'omv', 'Open Market Value (S$)', 'number', false, errors)}${field(app, 'carAge', 'Vehicle age (years)', 'number', false, errors)}
+    ${field(app, 'downPayment', 'Down payment (S$)', 'number', false, errors)}${field(app, 'loanAmount', 'Loan amount (S$)', 'number', false, errors)}
     ${select(app, 'tenureYears', 'Loan tenure (years)', [1, 2, 3, 4, 5, 6, 7].map(String))}</div>
     <div class="note ${exceeds ? 'bad' : ''}" id="ltv-check">
       <b>LTV check: ${pct(metrics.ltv)}</b> · Applicable cap: ${pct(metrics.cap)} · Estimated monthly payment: ${money(metrics.monthly)}
@@ -294,9 +305,13 @@ function stepFive(app, assessment) {
   <div class="submission-notice"><b>Synthetic demonstration</b><span>By submitting, you confirm that all entered information is complete and accurate for this synthetic demonstration.</span></div>`;
 }
 
-export function formView({ app, step, assessment }) {
-  const panels = [stepOne(app), stepTwo(app), stepThree(app), stepFour(app, assessment), stepFive(app, assessment)];
+export function formView({ app, step, assessment, errors = {}, validationSummary = '' }) {
+  const panels = [stepOne(app, errors), stepTwo(app, errors), stepThree(app, errors), stepFour(app, assessment, errors), stepFive(app, assessment)];
   const [stepTitle, stepDescription] = formStepDetails[step - 1];
+  const visibleErrors = Object.entries(errors).filter(([key]) => {
+    if (key === 'consent') return step === 1;
+    return requiredApplicationFields.get(key)?.step === step;
+  });
   const primaryAction = step < STEP_NAMES.length
     ? button('Continue', 'change-step', 'pri form-primary', 'data-delta="1"')
     : button('Submit application', 'submit-application', 'pri form-primary');
@@ -320,6 +335,9 @@ export function formView({ app, step, assessment }) {
     </nav>
     <form id="application-form" data-id="${esc(app.id)}" class="application-form-card">
       <div class="form-section-heading"><p>Step ${step}</p><h2 id="form-step-heading">${stepTitle}</h2><span>${stepDescription}</span></div>
+      ${validationSummary && visibleErrors.length ? `<div class="form-validation-summary" id="form-validation-summary" role="alert" tabindex="-1">
+        <b>${esc(validationSummary)}</b><ul>${visibleErrors.map(([key, message]) => `<li data-field="${esc(key)}">${esc(message)}</li>`).join('')}</ul>
+      </div>` : ''}
       <div class="form-step-content">${panels[step - 1]}</div>
       <footer class="form-actions">
         <div class="form-actions-back">${step > 1 ? button('Back', 'change-step', 'form-secondary', 'data-delta="-1"') : ''}</div>
@@ -330,27 +348,146 @@ export function formView({ app, step, assessment }) {
 }
 
 export function statusView(app, logs) {
+  const auditLogs = Array.isArray(logs) ? logs : [];
+  const riskLog = auditLogs.find(item => item.action === 'Risk Assessed');
+  const reviewLog = auditLogs.find(item => ['Approved', 'Rejected', 'Information Requested'].includes(item.action));
+  const decisionLog = auditLogs.find(item => item.action === (app.status === 'approved' ? 'Approved' : 'Rejected'));
+  const statusDetails = {
+    draft: {
+      headline: 'Application not submitted',
+      supporting: 'Finish the remaining details when you are ready.',
+      description: 'Your application is saved as a draft and has not entered assessment.',
+      next: 'Continue the application, review the details, and submit it when you are ready.',
+      tone: 'draft'
+    },
+    submitted: {
+      headline: 'Application received',
+      supporting: 'Follow the progress of your submitted application.',
+      description: 'Your application has been submitted. Automated assessment and officer review are in progress.',
+      next: 'No action is required right now. Your application is being assessed.',
+      tone: 'review'
+    },
+    reviewing: {
+      headline: 'Review in progress',
+      supporting: 'Track the current review and any required next step.',
+      description: 'The automated assessment is complete and an officer review is in progress.',
+      next: 'No action is required right now. Return to this page later to see the recorded outcome.',
+      tone: 'review'
+    },
+    need_info: {
+      headline: 'Additional information required',
+      supporting: 'Review the request and provide the information needed to continue.',
+      description: 'The review is paused until you provide the requested information.',
+      next: 'Submit the requested information so the officer can continue reviewing your application.',
+      tone: 'attention'
+    },
+    approved: {
+      headline: 'Application approved',
+      supporting: 'Review the recorded outcome and available decision details.',
+      description: 'An approval decision has been recorded for this application.',
+      next: 'The decision has been recorded. Review the decision details below.',
+      tone: 'approved'
+    },
+    rejected: {
+      headline: 'Application declined',
+      supporting: 'Review the recorded outcome and available decision explanation.',
+      description: 'A decline decision has been recorded for this application.',
+      next: 'The decision has been recorded. Review the available explanation below.',
+      tone: 'rejected'
+    }
+  };
+  const detail = statusDetails[app.status] || {
+    headline: STATUS[app.status]?.label || 'Application status',
+    supporting: 'Review the latest available information for this application.',
+    description: 'Review the current application status and progress below.',
+    next: 'Return to your applications list for the latest available information.',
+    tone: 'draft'
+  };
   const stages = [
     ['Application created', app.createdAt],
     ['Application submitted', app.submittedAt],
-    ['Automated checks completed', logs.find(item => item.action === 'Risk Assessed')?.ts],
-    [app.status === 'need_info' ? 'Additional information requested' : 'Officer review', logs.find(item => ['Approved', 'Rejected', 'Information Requested'].includes(item.action))?.ts],
-    [app.status === 'approved' ? 'Application approved' : app.status === 'rejected' ? 'Application rejected' : 'Final decision', ['approved', 'rejected'].includes(app.status) ? logs.find(item => ['Approved', 'Rejected'].includes(item.action))?.ts : null]
+    ['Automated assessment', riskLog?.ts],
+    [app.status === 'need_info' ? 'Additional information requested' : 'Officer review', reviewLog?.ts],
+    ['Decision recorded', decisionLog?.ts]
   ];
-  const reached = app.status === 'draft' ? 0 : app.status === 'submitted' ? 1 : ['reviewing', 'need_info'].includes(app.status) ? 3 : 4;
-  return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
-    <div><h1>Application status</h1><p class="sub mono">${app.id}</p></div><span style="flex:1"></span>${tag(app.status)}
-  </div><div class="grid2">
-    <div class="card"><h2>Progress</h2><ol class="tl">${stages.map(([label, time], index) =>
-      `<li class="${index < reached ? 'done' : index === reached ? 'now' : ''}"><b>${label}</b><div class="muted mono">${fmtTime(time)}</div></li>`).join('')}</ol></div>
-    <div class="card"><h2>Application summary</h2>
-      <div class="chk"><span>Applicant</span><span>${esc(app.name)}</span></div><div class="chk"><span>Vehicle</span><span>${esc(app.carModel)}</span></div>
-      <div class="chk"><span>Loan amount</span><span>${money(app.loanAmount)}</span></div>
-      ${app.needInfoReason ? `<div class="note warn"><b>Information requested</b><br>${esc(app.needInfoReason)}</div>` : ''}
-      ${app.officerNote && ['approved', 'rejected'].includes(app.status) ? `<div class="note ${app.status === 'rejected' ? 'bad' : ''}"><b>Officer decision</b><br>${esc(app.officerNote)}</div>` : ''}
-      <div class="btnrow">${button('Back to list', 'navigate', '', 'data-route="#/apply-home"')}
-      ${app.status === 'need_info' ? button('Provide information', 'navigate', 'warn', `data-route="#/supplement/${app.id}"`) : ''}</div>
-    </div></div>`;
+  const currentStage = app.status === 'draft' ? -1 : app.status === 'submitted' ? 2 : ['reviewing', 'need_info'].includes(app.status) ? 3 : 4;
+  const completedThrough = app.status === 'draft' ? 0 : app.status === 'submitted' ? 1 : ['reviewing', 'need_info'].includes(app.status) ? 2 : 3;
+  const primaryAction = app.status === 'draft'
+    ? button('Continue Application', 'navigate', 'status-primary pri', `data-route="#/form/${esc(app.id)}"`)
+      : app.status === 'need_info'
+      ? button('Provide Information', 'navigate', 'status-primary status-primary-attention', `data-route="#/supplement/${esc(app.id)}"`)
+      : '';
+  const statusBadge = `<span class="tag ${STATUS[app.status]?.cls || 't-gray'}">${esc(STATUS[app.status]?.label || app.status)}</span>`;
+  const unavailable = '&mdash;';
+  const overview = [
+    ['Application ID', esc(app.id), 'mono'],
+    ['Created date', app.createdAt ? fmtTime(app.createdAt) : unavailable, 'mono'],
+    ['Vehicle', String(app.carModel ?? '').trim() ? esc(app.carModel) : unavailable, ''],
+    ['Vehicle price', app.carPrice === null || app.carPrice === undefined || app.carPrice === '' ? unavailable : money(app.carPrice), 'mono'],
+    ['Requested loan amount', app.loanAmount === null || app.loanAmount === undefined || app.loanAmount === '' ? unavailable : money(app.loanAmount), 'mono'],
+    ['Loan tenure', app.tenureYears === null || app.tenureYears === undefined || app.tenureYears === '' ? unavailable : `${esc(app.tenureYears)} years`, ''],
+    ['Current status', esc(STATUS[app.status]?.label || app.status), '']
+  ];
+  const decided = ['approved', 'rejected'].includes(app.status);
+
+  return `<section class="status-page" aria-labelledby="status-page-title">
+    <div class="status-top-nav">${button('Back to applications', 'navigate', 'status-back', 'data-route="#/apply-home"')}</div>
+    <header class="status-page-header">
+      <div>
+        <p class="eyebrow">APPLICATION STATUS</p>
+        <h1 id="status-page-title">Application ${esc(app.id)}</h1>
+        <p>${esc(detail.supporting)}</p>
+      </div>
+      <div class="status-current">${statusBadge}</div>
+    </header>
+
+    <section class="status-banner status-banner-${detail.tone}" role="status" aria-labelledby="status-summary-title">
+      <div class="status-banner-copy">
+        <span class="status-signal" aria-hidden="true"></span>
+        <div><h2 id="status-summary-title">${esc(detail.headline)}</h2><p>${esc(detail.description)}</p></div>
+      </div>
+      ${primaryAction ? `<div class="status-banner-action">${primaryAction}</div>` : ''}
+    </section>
+
+    <section class="status-card status-progress-card" aria-labelledby="status-progress-title">
+      <div class="status-section-heading"><div><p class="eyebrow">WORKFLOW</p><h2 id="status-progress-title">Application progress</h2></div></div>
+      <ol class="status-progress">${stages.map(([label, time], index) => {
+        const state = index <= completedThrough ? 'complete' : index === currentStage ? 'current' : 'future';
+        const stateLabel = state === 'complete' ? 'Completed' : state === 'current' ? 'Current stage' : 'Upcoming';
+        return `<li class="${state}" ${state === 'current' ? 'aria-current="step"' : ''}>
+          <span class="status-progress-marker" aria-hidden="true">${state === 'complete' ? '&#10003;' : index + 1}</span>
+          <div><b>${esc(label)}</b><span>${time ? fmtTime(time) : stateLabel}</span></div>
+        </li>`;
+      }).join('')}</ol>
+    </section>
+
+    <div class="status-detail-grid">
+      <section class="status-card" aria-labelledby="application-overview-title">
+        <div class="status-section-heading"><div><p class="eyebrow">DETAILS</p><h2 id="application-overview-title">Application overview</h2></div></div>
+        <dl class="status-overview">${overview.map(([label, value, className]) =>
+          `<div><dt>${label}</dt><dd class="${className}">${value}</dd></div>`).join('')}</dl>
+      </section>
+      <section class="status-card status-next-card" aria-labelledby="status-next-title">
+        <div class="status-section-heading"><div><p class="eyebrow">NEXT STEP</p><h2 id="status-next-title">What happens next</h2></div></div>
+        <p>${esc(detail.next)}</p>
+      </section>
+    </div>
+
+    ${app.status === 'need_info' && app.needInfoReason ? `<section class="status-card status-request-card" aria-labelledby="status-request-title">
+      <div class="status-section-heading"><div><p class="eyebrow">ACTION REQUIRED</p><h2 id="status-request-title">Information requested</h2></div></div>
+      <p>${esc(app.needInfoReason)}</p>
+    </section>` : ''}
+
+    ${decided ? `<section class="status-card status-decision-card status-decision-${app.status}" aria-labelledby="status-decision-title">
+      <div class="status-section-heading"><div><p class="eyebrow">RECORDED OUTCOME</p><h2 id="status-decision-title">Decision</h2></div>${statusBadge}</div>
+      <dl class="status-decision-details">
+        <div><dt>Decision status</dt><dd>${esc(STATUS[app.status]?.label || app.status)}</dd></div>
+        <div><dt>Decision date</dt><dd class="mono">${decisionLog?.ts ? fmtTime(decisionLog.ts) : unavailable}</dd></div>
+      </dl>
+      ${app.officerNote ? `<div class="status-decision-explanation"><h3>Decision explanation</h3><p>${esc(app.officerNote)}</p></div>` : ''}
+      <p class="status-prototype-note">This is a simulated decision for demonstration purposes.</p>
+    </section>` : ''}
+  </section>`;
 }
 
 export function supplementView(app, uploads = []) {

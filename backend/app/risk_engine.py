@@ -9,14 +9,14 @@ MODEL_VERSION = "deterministic-score-v1.0.0"
 FLAT_RATE = 0.0278
 
 REQUIRED_FIELDS = {
-    "name": "name",
-    "nric": "identity_number",
-    "employer": "employer",
-    "empMonths": "employment_months",
-    "incomeDeclared": "declared_income",
-    "carPrice": "car_price",
-    "loanAmount": "loan_amount",
-    "downPayment": "down_payment",
+    "name": {"code": "name", "kind": "text"},
+    "nric": {"code": "identity_number", "kind": "text"},
+    "employer": {"code": "employer", "kind": "text"},
+    "empMonths": {"code": "employment_months", "kind": "number", "minimum": 0},
+    "incomeDeclared": {"code": "declared_income", "kind": "number", "minimum": 0},
+    "carPrice": {"code": "car_price", "kind": "number", "minimum_exclusive": 0},
+    "loanAmount": {"code": "loan_amount", "kind": "number", "minimum_exclusive": 0},
+    "downPayment": {"code": "down_payment", "kind": "number", "minimum": 0},
 }
 
 
@@ -41,10 +41,23 @@ def monthly_payment(loan: Any, years: Any) -> float:
 
 def required_missing(application: Any) -> list[str]:
     missing = []
-    for field, code in REQUIRED_FIELDS.items():
+    for field, definition in REQUIRED_FIELDS.items():
         value = getattr(application, field, None)
-        if value is None or value == "":
-            missing.append(code)
+        is_missing = value is None
+        if isinstance(value, str):
+            is_missing = not value.strip()
+        if not is_missing and definition["kind"] == "number":
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                is_missing = True
+            else:
+                if "minimum" in definition:
+                    is_missing = numeric < definition["minimum"]
+                if "minimum_exclusive" in definition:
+                    is_missing = numeric <= definition["minimum_exclusive"]
+        if is_missing:
+            missing.append(definition["code"])
     return missing
 
 

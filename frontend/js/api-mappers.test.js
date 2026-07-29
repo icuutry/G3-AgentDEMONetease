@@ -166,13 +166,14 @@ assert.deepEqual(lastRequest(), {
 queueJson(applicationResponse);
 await updateApplication('APP/1', {
   cpfPulled: false,
+  employer: '',
   incomeDeclared: ' ',
   existingMonthly: 0
 });
 assert.deepEqual(lastRequest(), {
   method: 'PATCH',
   path: '/applications/APP%2F1',
-  body: { cpfPulled: false, existingMonthly: 0 }
+  body: { cpfPulled: false, employer: '', existingMonthly: 0 }
 });
 
 queueJson(applicationResponse, 201);

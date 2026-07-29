@@ -6,6 +6,71 @@ export const money = value => `S$${n(value).toLocaleString('en-SG', { maximumFra
 export const pct = value => `${(value * 100).toFixed(1)}%`;
 export const ltvCap = omv => n(omv) <= 20000 ? 0.70 : 0.60;
 
+export const REQUIRED_APPLICATION_FIELDS = Object.freeze([
+  Object.freeze({ key: 'name', label: 'Full name', step: 1, kind: 'text', message: 'Enter your full name.' }),
+  Object.freeze({ key: 'nric', label: 'NRIC / FIN', step: 1, kind: 'text', message: 'Enter your NRIC or FIN.' }),
+  Object.freeze({ key: 'employer', label: 'Employer / business', step: 2, kind: 'text', message: 'Enter your employer or business name.' }),
+  Object.freeze({ key: 'empMonths', label: 'Months in current employment', step: 2, kind: 'number', min: 0, message: 'Enter the number of months in your current employment.' }),
+  Object.freeze({ key: 'incomeDeclared', label: 'Declared monthly income', step: 2, kind: 'number', min: 0, message: 'Enter your declared monthly income.' }),
+  Object.freeze({ key: 'carPrice', label: 'Vehicle price', step: 4, kind: 'number', minExclusive: 0, message: 'Enter a vehicle price greater than zero.' }),
+  Object.freeze({ key: 'loanAmount', label: 'Loan amount', step: 4, kind: 'number', minExclusive: 0, message: 'Enter a loan amount greater than zero.' }),
+  Object.freeze({ key: 'downPayment', label: 'Down payment', step: 4, kind: 'number', min: 0, message: 'Enter the down payment amount.' })
+]);
+
+const CONSENT_ERROR = Object.freeze({
+  key: 'consent',
+  label: 'Applicant authorization',
+  step: 1,
+  message: 'Authorize the use of synthetic details before submission.'
+});
+
+const requiredFieldIsMissing = (app, definition) => {
+  const value = app?.[definition.key];
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string' && value.trim() === '') return true;
+  if (definition.kind !== 'number') return false;
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return true;
+  if (definition.minExclusive !== undefined && numeric <= definition.minExclusive) return true;
+  return definition.min !== undefined && numeric < definition.min;
+};
+
+export function normalizeRequiredTextValues(app = {}) {
+  const normalized = { ...app };
+  for (const definition of REQUIRED_APPLICATION_FIELDS) {
+    if (definition.kind === 'text' && typeof normalized[definition.key] === 'string') {
+      normalized[definition.key] = normalized[definition.key].trim();
+    }
+  }
+  return normalized;
+}
+
+export function requiredFieldErrors(app, { step } = {}) {
+  return REQUIRED_APPLICATION_FIELDS
+    .filter(definition => step === undefined || definition.step === step)
+    .filter(definition => requiredFieldIsMissing(app, definition));
+}
+
+export function validateFormAction(app, { action, step, delta = 0 } = {}) {
+  if (action === 'save-draft' || (action === 'change-step' && Number(delta) <= 0)) {
+    return { valid: true, errors: [], firstInvalidStep: null };
+  }
+
+  const errors = action === 'change-step'
+    ? requiredFieldErrors(app, { step })
+    : action === 'submit-application'
+      ? requiredFieldErrors(app)
+      : [];
+
+  if (action === 'submit-application' && !app?.consent) errors.push(CONSENT_ERROR);
+  return {
+    valid: errors.length === 0,
+    errors,
+    firstInvalidStep: errors.length ? Math.min(...errors.map(error => error.step)) : null
+  };
+}
+
 export function monthlyPayment(loan, years) {
   const y = n(years) || 1;
   return (n(loan) + n(loan) * FLAT_RATE * y) / (y * 12);
@@ -17,11 +82,7 @@ export function band(value, table) {
 }
 
 export function requiredMissing(app) {
-  const required = [
-    ['name', 'Name'], ['nric', 'NRIC / FIN'], ['employer', 'Employer'], ['empMonths', 'Months employed'],
-    ['incomeDeclared', 'Declared income'], ['carPrice', 'Vehicle price'], ['loanAmount', 'Loan amount'], ['downPayment', 'Down payment']
-  ];
-  return required.filter(([key]) => !app[key] && app[key] !== 0).map(([, label]) => label);
+  return requiredFieldErrors(app).map(definition => definition.label);
 }
 
 export function findDuplicates(app, allApps = []) {

@@ -191,6 +191,60 @@ def test_role_and_state_guards(client: TestClient) -> None:
     assert submit_response.json()["detail"]["code"] == "consent_required"
 
 
+@pytest.mark.parametrize("employer", ["", "   "])
+def test_submit_rejects_blank_employer_without_side_effects(
+    client: TestClient, employer: str
+) -> None:
+    applicant_token = token(client, "applicant")
+    officer_token = token(client, "officer")
+    applicant_headers = auth_header(applicant_token)
+    application_id = client.post(
+        "/applications",
+        json=LOW_PAYLOAD,
+        headers=applicant_headers,
+    ).json()["id"]
+
+    cleared = client.patch(
+        f"/applications/{application_id}",
+        json={"employer": employer},
+        headers=applicant_headers,
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["employer"] == employer
+
+    audit_before = client.get(
+        "/audit-logs",
+        params={"applicationId": application_id},
+        headers=auth_header(officer_token),
+    ).json()
+    rejected = client.post(
+        f"/applications/{application_id}/submit",
+        headers=applicant_headers,
+    )
+    audit_after = client.get(
+        "/audit-logs",
+        params={"applicationId": application_id},
+        headers=auth_header(officer_token),
+    ).json()
+    application = client.get(
+        f"/applications/{application_id}",
+        headers=applicant_headers,
+    ).json()
+
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["code"] == "required_fields_missing"
+    assert "employer" in rejected.json()["detail"]["message"]
+    assert application["status"] == "draft"
+    assert application["submittedAt"] is None
+    assert application["riskAssessment"] is None
+    assert audit_after == audit_before
+    assert not {
+        "submitted",
+        "information_retrieved",
+        "risk_assessed",
+    }.intersection(item["actionCode"] for item in audit_after["items"])
+
+
 def test_preview_evaluation_does_not_write_audit(client: TestClient) -> None:
     applicant_token = token(client, "applicant")
     officer_token = token(client, "officer")
@@ -322,6 +376,18 @@ def test_fixed_mock_apis_are_reproducible(client: TestClient) -> None:
         json={"personaId": "low"},
         headers=headers,
     )
+    employment = {
+        "employer": "Applicant Entered Employer",
+        "title": "Applicant Entered Title",
+        "empType": "Contract employee",
+        "empMonths": 14,
+        "incomeDeclared": 5100,
+    }
+    saved_employment = client.patch(
+        f"/applications/{application_id}",
+        json=employment,
+        headers=headers,
+    )
     cpf = client.post(
         f"/applications/{application_id}/mock/cpf",
         json={"personaId": "low"},
@@ -340,8 +406,11 @@ def test_fixed_mock_apis_are_reproducible(client: TestClient) -> None:
         second_myinfo.json()["application"]["nric"]
         == first_myinfo.json()["application"]["nric"]
     )
+    assert saved_employment.status_code == 200
     assert cpf.json()["application"]["incomeVerified"] == 6000
     assert cpf.json()["application"]["cpfPulled"] is True
+    for field, value in employment.items():
+        assert cpf.json()["application"][field] == value
     assert credit.json()["application"]["existingMonthly"] == 500
     assert credit.json()["application"]["creditPulled"] is True
 

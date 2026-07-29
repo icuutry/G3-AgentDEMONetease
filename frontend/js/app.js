@@ -1,6 +1,8 @@
 import { PRESETS, RULESET_VERSION } from './demo-data.js';
 import * as api from './api.js';
-import { evaluate, money, pct, requiredMissing } from './risk-engine.js';
+import {
+  evaluate, money, normalizeRequiredTextValues, pct, validateFormAction
+} from './risk-engine.js';
 import {
   applicantHomeView, auditView, caseView, formView, homeView, loginView, notFoundView,
   queueView, statusView, supplementView, unauthorizedView
@@ -20,6 +22,8 @@ let selectedMockPersona = 'low';
 let queueFilters = { kw: '', status: '', level: '' };
 let applicationsCache = [];
 let auditCache = [];
+let formErrors = {};
+let formValidationSummary = '';
 const assessmentCache = new Map();
 let suppressNextHashRender = false;
 
@@ -33,7 +37,54 @@ function clearTemporaryState() {
   queueFilters = { kw: '', status: '', level: '' };
   applicationsCache = [];
   auditCache = [];
+  formErrors = {};
+  formValidationSummary = '';
   assessmentCache.clear();
+}
+
+function clearFormValidation() {
+  formErrors = {};
+  formValidationSummary = '';
+}
+
+function applyFormValidation(validation, summary) {
+  formErrors = Object.fromEntries(validation.errors.map(error => [error.key, error.message]));
+  formValidationSummary = summary;
+}
+
+function reconcileFormValidation(draft) {
+  const invalidKeys = new Set(
+    validateFormAction(draft, { action: 'submit-application' }).errors.map(error => error.key)
+  );
+  formErrors = Object.fromEntries(
+    Object.entries(formErrors).filter(([key]) => invalidKeys.has(key))
+  );
+  if (!Object.keys(formErrors).length) formValidationSummary = '';
+}
+
+function focusFirstInvalidControl() {
+  const target = document.querySelector('#application-form [aria-invalid="true"]')
+    || document.getElementById('form-validation-summary');
+  if (target) target.focus();
+}
+
+function clearResolvedFieldError(control, draft) {
+  const key = control?.name;
+  if (!key || !formErrors[key]) return;
+  const validation = validateFormAction(draft, { action: 'submit-application' });
+  if (validation.errors.some(error => error.key === key)) return;
+
+  delete formErrors[key];
+  control.removeAttribute('aria-invalid');
+  control.removeAttribute('aria-describedby');
+  const wrapper = control.closest('.field-error');
+  if (wrapper) wrapper.classList.remove('field-error');
+  document.getElementById(`error-${key}`)?.remove();
+  document.querySelector(`#form-validation-summary [data-field="${key}"]`)?.remove();
+  if (!document.querySelector('#form-validation-summary li')) {
+    document.getElementById('form-validation-summary')?.remove();
+    formValidationSummary = '';
+  }
 }
 
 function updateHeaderVisibility(user) {
@@ -122,11 +173,14 @@ async function render() {
         }
         activeDraftId = id;
         formStep = 1;
+        clearFormValidation();
       }
       appRoot.innerHTML = formView({
         app: activeDraft,
         step: formStep,
-        assessment: evaluate(activeDraft, applicationsCache)
+        assessment: evaluate(activeDraft, applicationsCache),
+        errors: formErrors,
+        validationSummary: formValidationSummary
       });
     }
   } else if (page === 'status') {
@@ -206,12 +260,13 @@ function collectApplicationForm() {
   const form = document.getElementById('application-form');
   if (!form || !activeDraft || form.dataset.id !== activeDraft.id) return activeDraft;
 
-  const draft = { ...activeDraft };
+  let draft = { ...activeDraft };
   for (const [key, value] of new FormData(form).entries()) {
     if (key !== 'consent') draft[key] = value;
   }
   const consent = form.elements.consent;
   if (consent) draft.consent = consent.checked;
+  draft = normalizeRequiredTextValues(draft);
   activeDraft = draft;
   return activeDraft;
 }
@@ -228,12 +283,28 @@ async function saveActiveDraft({ notify = false } = {}) {
   return activeDraft;
 }
 
+async function persistInvalidRequiredText(draft, validation) {
+  const clearedText = Object.fromEntries(
+    validation.errors
+      .filter(error => typeof draft?.[error.key] === 'string')
+      .map(error => [error.key, draft[error.key]])
+  );
+  if (!draft?.id || !Object.keys(clearedText).length) return;
+
+  const saved = await api.updateApplication(draft.id, clearedText);
+  activeDraft = { ...saved, ...draft };
+  activeDraftId = activeDraft.id;
+  const index = applicationsCache.findIndex(application => application.id === activeDraft.id);
+  if (index >= 0) applicationsCache[index] = activeDraft;
+}
+
 async function retrieveMockData(retrieve, description) {
   const draft = await saveActiveDraft();
   if (!draft) return;
   const response = await retrieve(draft.id, selectedMockPersona);
   activeDraft = response.application;
   activeDraftId = activeDraft.id;
+  reconcileFormValidation(activeDraft);
   showMessage(`${description} retrieved from ${response.label || response.provider}.`);
   await render();
 }
@@ -273,14 +344,27 @@ async function handleAction(button) {
     activeDraft = await api.createApplication();
     activeDraftId = activeDraft.id;
     formStep = 1;
+    clearFormValidation();
     return navigate(`#/form/${activeDraft.id}`);
   }
   if (action === 'change-step') {
+    const delta = Number(button.dataset.delta);
+    const draft = collectApplicationForm();
+    const validation = validateFormAction(draft, { action, step: formStep, delta });
+    if (!validation.valid) {
+      await persistInvalidRequiredText(draft, validation);
+      applyFormValidation(validation, 'Complete the required fields before continuing.');
+      await render();
+      focusFirstInvalidControl();
+      return;
+    }
+    clearFormValidation();
     await saveActiveDraft();
-    formStep = Math.max(1, Math.min(5, formStep + Number(button.dataset.delta)));
+    formStep = Math.max(1, Math.min(5, formStep + delta));
     return render();
   }
   if (action === 'save-draft') {
+    clearFormValidation();
     await saveActiveDraft({ notify: true });
     return render();
   }
@@ -309,6 +393,7 @@ async function handleAction(button) {
       tenureYears: preset.tenureYears
     });
     activeDraftId = activeDraft.id;
+    clearFormValidation();
     showMessage(`${selectedMockPersona[0].toUpperCase() + selectedMockPersona.slice(1)}-risk preset retrieved from the frozen Mock API dataset.`);
     return render();
   }
@@ -327,10 +412,18 @@ async function handleAction(button) {
     return retrieveMockData(api.retrieveCreditReport, 'Synthetic credit report');
   }
   if (action === 'submit-application') {
+    const currentDraft = collectApplicationForm();
+    const validation = validateFormAction(currentDraft, { action });
+    if (!validation.valid) {
+      await persistInvalidRequiredText(currentDraft, validation);
+      formStep = validation.firstInvalidStep;
+      applyFormValidation(validation, 'Required information is incomplete.');
+      await render();
+      focusFirstInvalidControl();
+      return;
+    }
+    clearFormValidation();
     const draft = await saveActiveDraft();
-    const missing = requiredMissing(draft);
-    if (missing.length) return showMessage(`Complete these required fields: ${missing.join(', ')}.`);
-    if (!draft.consent) return showMessage('Applicant authorization is required before submission.');
     activeDraft = await api.submitApplication(draft.id);
     activeDraftId = activeDraft.id;
     showMessage('Application submitted. Automated checks are complete and the case is now in the officer queue.');
@@ -469,13 +562,17 @@ document.addEventListener('click', async event => {
 appRoot.addEventListener('input', event => {
   if (event.target.id === 'officer-note') updateDecisionButton();
   if (event.target.closest('#application-form')) {
-    refreshLtvCheck(collectApplicationForm());
+    const draft = collectApplicationForm();
+    clearResolvedFieldError(event.target, draft);
+    refreshLtvCheck(draft);
   }
 });
 
 appRoot.addEventListener('change', event => {
   if (event.target.closest('#application-form')) {
-    refreshLtvCheck(collectApplicationForm());
+    const draft = collectApplicationForm();
+    clearResolvedFieldError(event.target, draft);
+    refreshLtvCheck(draft);
   }
 });
 
