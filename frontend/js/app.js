@@ -7,6 +7,9 @@ import {
 } from './views.js';
 
 const appRoot = document.getElementById('app');
+const headerActions = document.getElementById('header-actions');
+const switchPortalButton = document.getElementById('switch-portal');
+const resetDemoButton = document.getElementById('reset-demo');
 let currentUser = null;
 let formStep = 1;
 let activeDraftId = null;
@@ -31,6 +34,16 @@ function clearTemporaryState() {
   applicationsCache = [];
   auditCache = [];
   assessmentCache.clear();
+}
+
+function updateHeaderVisibility(user) {
+  const role = user?.role;
+  const isAuthenticated = Boolean(user);
+  const showReset = role === 'officer';
+
+  switchPortalButton.hidden = !isAuthenticated;
+  resetDemoButton.hidden = !showReset;
+  headerActions.classList.toggle('has-visible-actions', isAuthenticated);
 }
 
 async function navigate(route) {
@@ -84,6 +97,7 @@ async function render() {
     ? `Signed in as ${currentUser.displayName || (currentUser.role === 'applicant' ? 'Applicant' : 'Loan Officer')}`
     : 'Not signed in';
   document.getElementById('ver').textContent = RULESET_VERSION;
+  updateHeaderVisibility(currentUser);
 
   if (!page) {
     appRoot.innerHTML = homeView();

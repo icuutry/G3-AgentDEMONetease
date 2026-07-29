@@ -96,22 +96,90 @@ export function loginView(role) {
 }
 
 export function applicantHomeView(apps) {
+  const summary = {
+    total: apps.length,
+    reviewing: apps.filter(app => ['submitted', 'reviewing'].includes(app.status)).length,
+    needInfo: apps.filter(app => app.status === 'need_info').length,
+    completed: apps.filter(app => ['approved', 'rejected'].includes(app.status)).length
+  };
+  const statusMessages = {
+    draft: 'Application not submitted',
+    submitted: 'Automated assessment and officer review in progress',
+    reviewing: 'Automated assessment and officer review in progress',
+    need_info: 'Additional information is required',
+    approved: 'Application approved',
+    rejected: 'Application declined'
+  };
   const rows = apps.slice().sort((a, b) => b.createdAt - a.createdAt).map(app => {
-    const action = app.status === 'draft'
-      ? button('Continue', 'navigate', 'sm', `data-route="#/form/${app.id}"`)
-      : button('View details', 'navigate', 'sm', `data-route="#/status/${app.id}"`);
-    const supplement = app.status === 'need_info'
-      ? button('Provide information', 'navigate', 'sm warn', `data-route="#/supplement/${app.id}"`) : '';
-    return `<tr><td class="mono">${app.id}</td><td>${esc(app.carModel || 'Not selected')}</td>
-      <td class="mono">${money(app.loanAmount)}</td><td>${tag(app.status)}</td>
-      <td class="mono muted">${fmtTime(app.createdAt)}</td><td><div class="btnrow">${action}${supplement}</div></td></tr>`;
+    const vehicleEntered = String(app.carModel ?? '').trim().length > 0;
+    const hasLoanContext = vehicleEntered || Number(app.carPrice) > 0 || Number(app.downPayment) > 0;
+    const loanAmountMissing = app.loanAmount === null || app.loanAmount === undefined || app.loanAmount === '';
+    const unenteredDraftLoan = app.status === 'draft'
+      && (loanAmountMissing || (Number(app.loanAmount) === 0 && !hasLoanContext));
+    const vehicleDisplay = app.status === 'draft' && !vehicleEntered
+      ? 'Not entered'
+      : app.carModel || 'Not selected';
+    const loanAmountDisplay = unenteredDraftLoan ? '—' : money(app.loanAmount);
+    const applicantStatusLabel = ['submitted', 'reviewing'].includes(app.status)
+      ? 'In Review'
+      : STATUS[app.status]?.label || app.status;
+    const applicantStatusTag = `<span class="tag ${STATUS[app.status]?.cls || 't-gray'}">${esc(applicantStatusLabel)}</span>`;
+    let action;
+    if (app.status === 'draft') {
+      action = button('Continue Application', 'navigate', 'sm dashboard-action action-primary', `data-route="#/form/${esc(app.id)}"`);
+    } else if (app.status === 'need_info') {
+      action = button('Provide Information', 'navigate', 'sm dashboard-action action-attention', `data-route="#/supplement/${esc(app.id)}"`);
+    } else if (['approved', 'rejected'].includes(app.status)) {
+      action = button('View Decision', 'navigate', 'sm dashboard-action action-secondary', `data-route="#/status/${esc(app.id)}"`);
+    } else {
+      action = button('View Status', 'navigate', 'sm dashboard-action action-secondary', `data-route="#/status/${esc(app.id)}"`);
+    }
+    return `<tr>
+      <td data-label="Application ID"><span class="mono app-id">${esc(app.id)}</span></td>
+      <td data-label="Vehicle">${esc(vehicleDisplay)}</td>
+      <td data-label="Loan amount"><span class="mono">${loanAmountDisplay}</span></td>
+      <td data-label="Status"><div class="application-status">${applicantStatusTag}<span>${statusMessages[app.status] || 'Current application status'}</span></div></td>
+      <td data-label="Created"><span class="mono muted">${fmtTime(app.createdAt)}</span></td>
+      <td data-label="Next action"><div class="btnrow application-actions">${action}</div></td>
+    </tr>`;
   }).join('');
-  return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
-    <div><h1>My applications</h1><p class="sub">Create a new application or continue an existing one.</p></div>
-    <span style="flex:1"></span>${button('New application', 'new-application', 'pri')}
-  </div>
-  <div class="card"><table><thead><tr><th>Application ID</th><th>Vehicle</th><th>Loan amount</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="6">No applications yet.</td></tr>'}</tbody></table></div>`;
+  const applicationList = rows
+    ? `<div class="application-table-wrap"><table class="application-table">
+        <caption class="sr">Your car loan applications</caption>
+        <thead><tr><th>Application ID</th><th>Vehicle</th><th>Loan amount</th><th>Status</th><th>Created</th><th>Next action</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`
+    : `<div class="application-empty">
+        <span class="empty-mark" aria-hidden="true"></span>
+        <h2>No applications yet</h2>
+        <p>Start a new application to explore the complete applicant and risk-review workflow.</p>
+        ${button('New application', 'new-application', 'pri')}
+      </div>`;
+  return `<section class="applicant-dashboard" aria-labelledby="applications-title">
+    <header class="dashboard-header">
+      <div>
+        <p class="eyebrow">Applicant dashboard</p>
+        <h1 id="applications-title">My Applications</h1>
+        <p>Create a new application, continue a draft, or track an existing case.</p>
+      </div>
+      ${button('New application', 'new-application', 'pri dashboard-new')}
+    </header>
+
+    <section class="app-summary" aria-label="Application summary">
+      <div class="summary-card summary-total"><span class="summary-mark" aria-hidden="true"></span><div><strong>${summary.total}</strong><b>Total Applications</b><span>All saved cases</span></div></div>
+      <div class="summary-card summary-review"><span class="summary-mark" aria-hidden="true"></span><div><strong>${summary.reviewing}</strong><b>In Review</b><span>Assessment underway</span></div></div>
+      <div class="summary-card summary-info"><span class="summary-mark" aria-hidden="true"></span><div><strong>${summary.needInfo}</strong><b>Need Information</b><span>Applicant action required</span></div></div>
+      <div class="summary-card summary-complete"><span class="summary-mark" aria-hidden="true"></span><div><strong>${summary.completed}</strong><b>Completed</b><span>Decision recorded</span></div></div>
+    </section>
+
+    <section class="application-list" aria-labelledby="application-list-title">
+      <div class="application-list-heading">
+        <div><p class="section-label">Applications</p><h2 id="application-list-title">Application history</h2></div>
+        <span>${summary.total} ${summary.total === 1 ? 'record' : 'records'}</span>
+      </div>
+      ${applicationList}
+    </section>
+  </section>`;
 }
 
 function stepOne(app) {
