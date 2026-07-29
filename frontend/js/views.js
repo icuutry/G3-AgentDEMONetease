@@ -17,19 +17,61 @@ const select = (app, key, label, options) => `
   </select></label>`;
 
 export function homeView() {
-  return `<section class="hero">
-    <div class="eyebrow">Deterministic lending workflow</div>
-    <h1>AI-assisted car loan approval</h1>
-    <p>Choose a role to explore the complete journey from application and consented sandbox data retrieval to explainable risk review and an auditable human decision.</p>
-    <div class="rolecards">
-      <button class="rolecard" data-action="navigate" data-route="#/login/applicant">
-        <span class="roleicon">A</span><b>Applicant portal</b>
-        <span>Apply, retrieve sandbox records, track status, and provide supplementary documents.</span>
+  return `<section class="hero" aria-labelledby="home-title">
+    <div class="hero-main">
+      <div class="hero-copy">
+        <div class="eyebrow">Explainable lending workflow</div>
+        <h1 id="home-title">AI Car Loan Approval &amp; Risk Control Agent</h1>
+        <p>One connected workflow for applicant data collection, deterministic risk assessment, human review, and auditable decisions.</p>
+        <div class="capabilities" aria-label="Product capabilities">
+          <span>Applicant Portal</span>
+          <span>Explainable Risk</span>
+          <span>Human Review</span>
+          <span>Audit Trail</span>
+        </div>
+      </div>
+      <div class="automotive-visual" aria-hidden="true">
+        <div class="visual-arch">
+          <div class="road-line"></div>
+          <div class="vehicle">
+            <span class="vehicle-cabin"></span>
+            <span class="vehicle-body"></span>
+            <span class="vehicle-window vehicle-window-left"></span>
+            <span class="vehicle-window vehicle-window-right"></span>
+            <span class="vehicle-light"></span>
+            <span class="vehicle-wheel vehicle-wheel-left"></span>
+            <span class="vehicle-wheel vehicle-wheel-right"></span>
+          </div>
+          <span class="visual-chip visual-chip-risk">Risk evidence</span>
+          <span class="visual-chip visual-chip-review">Human reviewed</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rolecards" aria-label="Choose a portal">
+      <button class="rolecard rolecard-applicant" data-action="navigate" data-route="#/login/applicant">
+        <span class="roleicon roleicon-user" aria-hidden="true"></span>
+        <span class="rolecard-copy">
+          <b>Applicant Portal</b>
+          <span>Create an application, retrieve simulated records, track status, and provide additional information.</span>
+        </span>
+        <span class="rolecard-action">Enter Applicant Portal <span aria-hidden="true">&rarr;</span></span>
       </button>
-      <button class="rolecard" data-action="navigate" data-route="#/login/officer">
-        <span class="roleicon">O</span><b>Loan officer portal</b>
-        <span>Review the queue, inspect risk evidence, record a decision, and export audit logs.</span>
+      <button class="rolecard rolecard-officer" data-action="navigate" data-route="#/login/officer">
+        <span class="roleicon roleicon-shield" aria-hidden="true"></span>
+        <span class="rolecard-copy">
+          <b>Loan Officer Portal</b>
+          <span>Review applications, inspect risk evidence, test scenarios, and record accountable decisions.</span>
+        </span>
+        <span class="rolecard-action">Enter Loan Officer Portal <span aria-hidden="true">&rarr;</span></span>
       </button>
+    </div>
+
+    <div class="workflow-strip" aria-label="Product workflow">
+      <div class="workflow-item"><span class="workflow-number">1</span><div><b>Collect</b><span>Synthetic applicant data</span></div></div>
+      <div class="workflow-item"><span class="workflow-number">2</span><div><b>Assess</b><span>Deterministic risk rules</span></div></div>
+      <div class="workflow-item"><span class="workflow-number">3</span><div><b>Review</b><span>Human decision control</span></div></div>
+      <div class="workflow-item"><span class="workflow-number">4</span><div><b>Audit</b><span>Versioned activity records</span></div></div>
     </div>
   </section>`;
 }

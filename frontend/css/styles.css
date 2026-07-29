@@ -6,6 +6,8 @@
    用法：color: var(--ink) 就是取 --ink 这个变量的值。
    ========================================================================== */
 :root{
+  --content-max:1180px;
+  --page-pad:20px;
   --bg:#F2F4F7;        /* 页面底色，浅灰 */
   --card:#FFFFFF;      /* 卡片底色，纯白 */
   --card-2:#F8FAFC;    /* 卡片内的次级底色，比如表头、悬停行 */
@@ -49,11 +51,13 @@ a{color:var(--brand)}
    .appbar  是导航栏，放系统名、当前登录身份、切换角色和重置按钮。
    ========================================================================== */
 .demobar{background:#2B2118;color:#F2E4D2;font-size:12px;padding:6px 20px;letter-spacing:.02em}
-.appbar{background:var(--card);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.appbar{position:relative;z-index:10;background:var(--card);border-bottom:1px solid var(--line);padding:12px max(var(--page-pad),calc((100vw - var(--content-max))/2));display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.appbar>*{position:relative;z-index:1}
 .appbar .brand{font-weight:600;font-size:15px}
 .appbar .who{font-size:12px;color:var(--ink2);background:var(--card-2);border:1px solid var(--line);padding:3px 10px;border-radius:20px}
+.appbar #ver{display:none}
 .appbar .spacer{flex:1}  /* 弹性占位，把它右边的元素推到最右 */
-.wrap{max-width:1320px;margin:0 auto;padding:24px 20px 80px}  /* 内容区，居中且限宽 */
+.wrap{width:100%;max-width:calc(var(--content-max) + (var(--page-pad) * 2));margin:0 auto;padding:24px var(--page-pad) 80px}  /* 内容区，居中且限宽 */
 
 /* ==========================================================================
    样式第 4 节：按钮
@@ -226,16 +230,103 @@ tbody tr:hover{background:var(--card-2)}  /* 鼠标悬停高亮整行 */
 .center{text-align:center}
 
 /* 首页专用 */
-.hero{max-width:660px;margin:60px auto;text-align:center}
-.hero h1{font-size:30px;margin-bottom:12px}
-.rolecards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:32px}
-@media(max-width:700px){.rolecards{grid-template-columns:1fr}}
-.rolecard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:26px 20px;cursor:pointer;text-align:left}
-.rolecard:hover{border-color:var(--brand)}
-.rolecard b{display:block;font-size:16px;margin-bottom:6px}
-.rolecard{font:inherit;color:inherit;width:100%}
-.rolecard span:last-child{display:block;color:var(--ink2);font-size:13px;line-height:1.5}
-.roleicon{display:inline-grid!important;place-items:center;width:34px;height:34px;margin-bottom:14px;border-radius:8px;background:var(--brand-soft);color:var(--brand)!important;font-weight:700}
+.hero{width:100%;max-width:var(--content-max);min-width:0;margin:32px auto 0;position:relative}
+.hero-main{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr);gap:52px;align-items:center;min-width:0;min-height:410px;padding:44px 54px;border:1px solid #E4E0D8;border-radius:24px;background:#FFFEFB;overflow:hidden;box-shadow:0 18px 50px rgba(20,43,70,.07)}
+.hero-main::before{content:"";position:absolute;z-index:0;width:180px;height:180px;left:-160px;top:-160px;border-radius:50%;background:rgba(231,218,194,.42);pointer-events:none}
+.hero-main>*{position:relative;z-index:2}
+.hero-copy{min-width:0}
+.hero .eyebrow{display:inline-flex;align-items:center;gap:8px;margin-bottom:18px;color:#315B88;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.hero .eyebrow::before{content:"";width:22px;height:2px;background:#315B88}
+.hero h1{max-width:670px;margin-bottom:20px;color:#142E4A;font-size:clamp(38px,4.3vw,60px);font-weight:650;line-height:1.04;letter-spacing:-.045em}
+.hero-copy>p{max-width:630px;margin:0;color:#52677B;font-size:17px;line-height:1.75}
+.capabilities{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+.capabilities span{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border:1px solid #D7E2EC;border-radius:999px;background:#F7FAFD;color:#294D72;font-size:13px;font-weight:600;line-height:1.3;letter-spacing:.01em}
+.capabilities span::before{content:"";width:6px;height:6px;border-radius:50%;background:#6F9CC7;box-shadow:0 0 0 3px #E4EEF7}
+.automotive-visual{position:relative;z-index:1;min-width:0}
+.visual-arch{position:relative;height:320px;border-radius:170px 170px 30px 30px;background:linear-gradient(145deg,#E7F0F7 0%,#F4F7F7 58%,#EFE5D4 100%);overflow:hidden}
+.visual-arch::before{content:"";position:absolute;inset:22px;border:1px solid rgba(47,91,135,.12);border-radius:150px 150px 22px 22px}
+.visual-arch::after{content:"";position:absolute;width:120px;height:120px;right:-35px;top:42px;border:26px solid rgba(255,255,255,.45);border-radius:50%}
+.road-line{position:absolute;left:8%;right:8%;bottom:60px;height:2px;background:#B6C4CE}
+.road-line::before,.road-line::after{content:"";position:absolute;top:-1px;width:36px;height:4px;border-radius:3px;background:#FFFEFB}
+.road-line::before{left:22%}.road-line::after{right:22%}
+.vehicle{position:absolute;left:11%;right:8%;bottom:70px;height:126px}
+.vehicle-body{position:absolute;left:0;right:0;bottom:15px;height:64px;border-radius:44px 56px 16px 16px;background:#193C60;box-shadow:0 18px 26px rgba(20,46,74,.16)}
+.vehicle-body::before{content:"";position:absolute;left:18px;top:18px;width:24px;height:8px;border-radius:8px;background:#D8E6EF}
+.vehicle-cabin{position:absolute;left:25%;right:18%;top:11px;height:66px;background:#214F78;clip-path:polygon(18% 0,72% 0,100% 100%,0 100%);border-radius:18px 24px 0 0}
+.vehicle-window{position:absolute;z-index:2;top:21px;height:38px;background:#C8DDEA}
+.vehicle-window-left{left:31%;width:24%;clip-path:polygon(16% 0,100% 0,100% 100%,0 100%)}
+.vehicle-window-right{left:58%;width:21%;clip-path:polygon(0 0,67% 0,100% 100%,0 100%)}
+.vehicle-light{position:absolute;z-index:2;right:1px;bottom:43px;width:18px;height:12px;border-radius:8px 2px 2px 8px;background:#F2C77D}
+.vehicle-wheel{position:absolute;z-index:3;bottom:0;width:38px;height:38px;border:8px solid #173149;border-radius:50%;background:#D9E1E5;box-shadow:0 0 0 3px rgba(255,255,255,.7)}
+.vehicle-wheel-left{left:17%}.vehicle-wheel-right{right:15%}
+.visual-chip{position:absolute;z-index:4;padding:8px 12px;border:1px solid rgba(31,70,105,.13);border-radius:9px;background:rgba(255,255,255,.88);box-shadow:0 8px 20px rgba(20,43,70,.09);color:#294D72;font-size:11px;font-weight:600;backdrop-filter:blur(4px)}
+.visual-chip::before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#5C8AB6}
+.visual-chip-risk{left:9%;top:58px}.visual-chip-review{right:7%;top:108px}
+.visual-chip-review::before{background:#588671}
+.rolecards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px}
+.rolecard{display:grid;grid-template-columns:auto 1fr;gap:0 16px;align-items:start;width:100%;padding:24px 26px;border:1px solid #D9E1E8;border-radius:16px;background:var(--card);color:inherit;font:inherit;cursor:pointer;text-align:left;box-shadow:0 7px 22px rgba(20,43,70,.045);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.rolecard:hover{transform:translateY(-3px);border-color:#648DB3;box-shadow:0 14px 30px rgba(20,43,70,.1)}
+.rolecard:focus-visible{outline:3px solid #356F9F;outline-offset:4px;border-color:#356F9F;box-shadow:0 0 0 2px #E7F0F7}
+.rolecard-officer{border-top:3px solid #183E63}
+.rolecard-applicant{border-top:3px solid #78A6CC}
+.roleicon{position:relative;display:block;width:46px;height:46px;border-radius:12px;background:#E9F2F9;color:#234F76}
+.rolecard-officer .roleicon{background:#F2E9DA;color:#183E63}
+.roleicon-user::before{content:"";position:absolute;left:18px;top:10px;width:11px;height:11px;border:2px solid currentColor;border-radius:50%}
+.roleicon-user::after{content:"";position:absolute;left:11px;bottom:9px;width:24px;height:13px;border:2px solid currentColor;border-bottom:0;border-radius:15px 15px 0 0}
+.roleicon-shield::before{content:"";position:absolute;left:13px;top:9px;width:20px;height:25px;background:currentColor;clip-path:polygon(50% 0,100% 18%,90% 72%,50% 100%,10% 72%,0 18%);opacity:.92}
+.roleicon-shield::after{content:"";position:absolute;left:20px;top:17px;width:8px;height:5px;border-left:2px solid #F2E9DA;border-bottom:2px solid #F2E9DA;transform:rotate(-45deg)}
+.rolecard-copy{min-width:0}
+.rolecard-copy b{display:block;margin:1px 0 6px;color:#183A5B;font-size:17px}
+.rolecard-copy>span{display:block;color:#526779;font-size:15px;line-height:1.65}
+.rolecard-action{grid-column:2;display:inline-flex;align-items:center;gap:8px;margin-top:18px;color:#1F5685;font-size:14px;font-weight:750;line-height:1.4}
+.rolecard-officer .rolecard-action{color:#173D60}
+.rolecard-action span{font-size:19px;font-weight:800;line-height:1;transition:transform .18s ease}
+.rolecard:hover .rolecard-action span{transform:translateX(3px)}
+.workflow-strip{display:grid;grid-template-columns:repeat(4,1fr);margin-top:20px;border:1px solid #DFE3E5;border-radius:14px;background:#F8F6F1;overflow:hidden}
+.workflow-item{position:relative;display:flex;gap:13px;align-items:center;min-width:0;padding:22px 20px}
+.workflow-item+.workflow-item{border-left:1px solid #DFE3E5}
+.workflow-number{display:grid;place-items:center;flex:0 0 32px;height:32px;border-radius:50%;background:#DCE9F3;color:#214F76;font-family:var(--mono);font-size:13px;font-weight:700}
+.workflow-item b,.workflow-item div>span{display:block}
+.workflow-item b{color:#213D58;font-size:15px;line-height:1.35}
+.workflow-item div>span{margin-top:2px;color:#657786;font-size:13px;line-height:1.5}
+@media(max-width:960px){
+  .hero-main{grid-template-columns:1fr;gap:26px;padding:38px 40px}
+  .hero-copy{text-align:center}
+  .hero-copy>p{margin-left:auto;margin-right:auto}
+  .capabilities{justify-content:center}
+  .automotive-visual{max-width:520px;width:100%;margin:0 auto}
+  .visual-arch{height:260px}
+  .vehicle{left:15%;right:12%;bottom:52px;transform:scale(.9);transform-origin:bottom center}
+  .road-line{bottom:48px}
+  .workflow-strip{grid-template-columns:1fr 1fr}
+  .workflow-item:nth-child(3){border-left:0;border-top:1px solid #DFE3E5}
+  .workflow-item:nth-child(4){border-top:1px solid #DFE3E5}
+}
+@media(max-width:700px){
+  .hero{margin-top:12px}
+  .hero-main{min-height:0;padding:32px 22px 24px;border-radius:18px}
+  .hero h1{font-size:36px}
+  .hero-copy>p{font-size:15px;line-height:1.65}
+  .capabilities span{padding:7px 10px}
+  .automotive-visual{max-width:390px}
+  .visual-arch{height:180px;border-radius:110px 110px 20px 20px}
+  .visual-chip{display:none}
+  .vehicle{left:7%;right:3%;bottom:30px;transform:scale(.66)}
+  .road-line{bottom:29px}
+  .rolecards{grid-template-columns:1fr}
+  .rolecard{min-height:176px;padding:22px}
+  .workflow-strip{grid-template-columns:1fr}
+  .workflow-item+.workflow-item{border-left:0;border-top:1px solid #DFE3E5}
+  .workflow-item{padding:18px}
+}
+@media(max-width:420px){
+  .hero-main{padding-left:18px;padding-right:18px}
+  .hero h1{font-size:31px}
+  .automotive-visual{display:none}
+  .rolecard{grid-template-columns:1fr;padding:20px}
+  .roleicon{margin-bottom:14px}
+  .rolecard-action{grid-column:1}
+}
 .bar{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit}
 .bar .track,.bar .fill{display:block}
 .section-label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
