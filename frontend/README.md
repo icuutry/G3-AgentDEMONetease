@@ -1,10 +1,60 @@
-# AI Car Loan Approval & Risk Agent
+# AI Car Loan Approval & Risk Agent — Frontend
 
 ## Overview
 
-This frontend is an English-only, dependency-free demonstration of an end-to-end car-loan workflow. Applicants can create and submit applications, use simulated MyInfo, CPF, and credit-report retrieval, track progress, and provide supplementary documents. Loan officers can review a prioritized queue, inspect an explainable deterministic risk assessment, approve or reject a case, request information, and export audit records.
+This directory contains the English-only browser frontend for the integrated educational prototype. It is a static HTML, CSS, and JavaScript application that communicates with the FastAPI backend through `fetch()`.
 
-All people, employers, records, authorizations, and decisions are synthetic. The application does not contact external services.
+The backend and its SQLite database are the authoritative data layer. The frontend keeps transient UI state in memory and stores only the demo authentication token in `sessionStorage`. All identities, financial records, authorizations, and decisions are synthetic.
+
+The prototype does not represent a real financial institution and does not make binding lending decisions.
+
+## Run the integrated demo
+
+Use the repository-root Windows launcher rather than opening `index.html` directly or using Live Server:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\run-demo.ps1
+```
+
+The backend virtual environment and runtime dependencies must already be installed as described in the root [README](../README.md).
+
+Local addresses:
+
+- Frontend: `http://127.0.0.1:5510/`
+- Backend API: `http://127.0.0.1:8000`
+- API health check: `http://127.0.0.1:8000/health`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+
+The launcher refuses to reuse occupied ports, starts both services as background child processes, waits for readiness, opens the browser with a cache-busting URL, and stops only those child processes when Enter is pressed. Logs are written to the repository-root `demo-logs/` directory.
+
+## Demo accounts
+
+| Role | Account | Password |
+|---|---|---|
+| Applicant | `applicant@demo.com` | `demo123` |
+| Loan officer | `officer@demo.com` or `Officer01` | `demo123` |
+
+The login screens can fill the corresponding demo account automatically.
+
+## Frontend routes
+
+The application uses hash-based client-side routes:
+
+| Route | Purpose |
+|---|---|
+| `#/` | Portal selection |
+| `#/login/applicant` | Applicant sign-in |
+| `#/login/officer` | Loan-officer sign-in |
+| `#/apply-home` | Applicant dashboard and application list |
+| `#/form/:applicationId` | Five-step application form |
+| `#/status/:applicationId` | Submission status, progress, and decision details |
+| `#/supplement/:applicationId` | Supplementary-information submission |
+| `#/queue` | Loan-officer review queue |
+| `#/case/:applicationId` | Loan-officer case review |
+| `#/audit` | Audit records |
+
+`app.js` enforces the corresponding Applicant or Officer view access, while the backend independently enforces authentication and role permissions.
 
 ## Folder structure
 
@@ -15,101 +65,96 @@ frontend/
   css/
     styles.css
   js/
-    app.js
-    views.js
-    store.js
     api.js
-    risk-engine.js
+    api-mappers.js
+    app.js
     demo-data.js
+    risk-engine.js
+    store.js
+    views.js
 ```
 
-- `index.html` contains the static application shell.
-- `css/styles.css` contains the complete visual design and responsive rules.
-- `js/app.js` coordinates routing, role checks, events, startup, and rendering.
-- `js/views.js` contains page and section templates.
-- `js/store.js` owns application state, localStorage persistence, mutations, lookups, and audit records.
-- `js/api.js` is the asynchronous boundary intended for future backend integration.
-- `js/risk-engine.js` contains deterministic calculations, validations, hard rules, and recommendations.
-- `js/demo-data.js` contains presets, statuses, and initial synthetic records.
-
-## Run with VS Code Live Server
-
-1. Open the repository folder in VS Code.
-2. Install the **Live Server** extension if it is not already available.
-3. Right-click `frontend/index.html`.
-4. Select **Open with Live Server**.
-
-Do not open `index.html` directly with a `file://` URL because the application uses JavaScript ES modules.
-
-## Demo accounts
-
-| Role | Account | Password |
-|---|---|---|
-| Applicant | `applicant@demo.com` | `demo123` |
-| Loan officer | `officer@demo.com` | `demo123` |
-
-The login page can fill either account automatically.
-
-## Routes
-
-| Route | Purpose |
-|---|---|
-| `#/` | Role selection |
-| `#/login/applicant` | Applicant sign-in |
-| `#/login/officer` | Loan-officer sign-in |
-| `#/apply-home` | Applicant application list |
-| `#/form/:applicationId` | Five-step application form |
-| `#/status/:applicationId` | Application status and timeline |
-| `#/supplement/:applicationId` | Supplementary-information submission |
-| `#/queue` | Officer case queue |
-| `#/case/:applicationId` | Three-column case-review workspace |
-| `#/audit` | Audit-record list and CSV export |
+- `index.html` provides the application shell and global-header controls.
+- `css/styles.css` contains global, page-specific, responsive, and accessibility styles.
+- `js/app.js` coordinates startup, hash routing, session restoration, role checks, form interactions, API calls, and rendering.
+- `js/views.js` renders the landing page, authentication views, Applicant workflow, Officer workflow, and audit views.
+- `js/api.js` is the active `fetch()` adapter for the FastAPI backend.
+- `js/api-mappers.js` serializes frontend application data and normalizes backend responses.
+- `js/risk-engine.js` provides deterministic calculations, client-side previews, and form validation shared by the UI.
+- `js/demo-data.js` contains frontend labels, statuses, rules-version metadata, and full-form demo presets.
+- `js/store.js` is a legacy local-storage module retained in the repository; the active application does not import it or use it as the data layer.
 
 ## Current architecture
 
-The application uses one in-memory state object backed by browser `localStorage` under the key `carloan_demo_v2`. `store.js` is the only module that reads or writes localStorage. Views receive prepared data and never access browser storage directly.
+```text
+Browser views
+  → app.js routing and event delegation
+  → api.js fetch adapter
+  → FastAPI at 127.0.0.1:8000
+  → SQLAlchemy and SQLite
+```
 
-The risk engine is deterministic: identical application data and the same set of applications produce the same score, risk band, factors, hard-rule results, and recommendation. The supplied presets remain calibrated to:
+The active data flow is:
 
-- Low: score 23, recommendation `Approve`
-- Medium: score 54, recommendation `Manual Review`
-- High: score 77, recommendation `Reject`
+1. `app.js` restores a session, loads the current route, and requests data through `api.js`.
+2. `api.js` sends JSON requests and bearer authentication to the backend.
+3. `api-mappers.js` converts application payloads and normalizes application, assessment, audit, supplement, and mock-retrieval responses.
+4. `views.js` receives prepared data and returns the current page markup.
+5. User actions are handled through the existing delegated `data-action` controls.
 
-Use **Reset demo** in the navigation bar to restore the initial synthetic dataset.
+Application records, saved risk assessments, supplements, decisions, and audit entries are persisted by the backend in SQLite. Refreshing the browser does not make localStorage the source of truth.
 
-## Backend API boundary
+## Authentication
 
-`js/api.js` currently delegates to the local store while exposing asynchronous functions:
+`api.js` stores the demo access token in `sessionStorage` under:
 
-- `listApplications()`
-- `getApplication(applicationId)`
-- `createApplication(payload)`
-- `updateApplication(applicationId, payload)`
-- `submitApplication(applicationId)`
-- `getRiskAssessment(applicationId)`
-- `approveApplication(applicationId, payload)`
-- `rejectApplication(applicationId, payload)`
-- `requestSupplement(applicationId, payload)`
-- `submitSupplement(applicationId, payload)`
-- `listMockPersonas()`
-- `retrieveMyInfo(applicationId, personaId)`
-- `retrieveCpf(applicationId, personaId)`
-- `retrieveCreditReport(applicationId, personaId)`
-- `getAuditLogs(applicationId)`
+```text
+car_loan_agent_access_token
+```
 
-## Replacing the local adapter
+Authenticated requests include:
 
-To connect a real backend:
+```http
+Authorization: Bearer <demo-token>
+```
 
-1. Keep the exported function names and return shapes in `js/api.js`.
-2. Replace calls to `store.js` with `fetch()` calls to the corresponding backend endpoints.
-3. Send and receive JSON, map backend errors to rejected promises, and handle those errors in `app.js`.
-4. Move authentication and authorization enforcement to the server.
-5. Stop initializing the local store in `app.js` after all reads and mutations use the backend.
-6. Keep `views.js` storage-independent; it should continue to receive data from the application coordinator.
+The token is cleared on logout, portal switching, or an unauthorized API response. The implementation uses fixed demo accounts and tokens and is not production authentication.
 
-No framework, package manager, bundler, external library, font, or API is required for the current version.
+## Backend API integration
 
-## API configuration
+The default API base URL is:
 
-The API adapter uses `window.CAR_LOAN_API_BASE`, falling back to `http://127.0.0.1:8000`; set the global before loading `js/app.js` when a different origin is required. Authentication tokens are kept in `sessionStorage`. `submitSupplement()` returns the normalized updated application. Mock retrieval functions return the backend provenance envelope with a normalized application.
+```text
+http://127.0.0.1:8000
+```
+
+It can be overridden by defining `window.CAR_LOAN_API_BASE` before the main module loads.
+
+The active adapter supports:
+
+- Login and current-session retrieval
+- Application creation, listing, loading, draft updates, and submission
+- Saved and preview risk assessments
+- Officer approve, reject, and request-information decisions
+- Supplementary notes and simulated file metadata
+- Synthetic MyInfo, CPF, and credit-report retrieval
+- Audit-log retrieval
+- Officer-only demo reset
+
+The adapter maps structured backend errors to `ApiError`. A `401` response clears the stored token; other errors are surfaced through the existing application error handling.
+
+## Data and workflow notes
+
+- Successful application submission is validated and assessed by the backend before the case enters `reviewing`.
+- CPF retrieval supplies verified contribution-derived income only; employment details and declared income remain applicant-entered.
+- Supplementary uploads are simulated file metadata, not production document storage.
+- Officer decisions and audit records are persisted by the backend.
+- The deterministic rules engine produces repeatable demo results for the same inputs.
+- Reset demo is visible to authenticated Officers only and restores the seeded synthetic dataset.
+
+## Browser and runtime requirements
+
+- Use an HTTP-served frontend; do not open `index.html` with a `file://` URL.
+- The canonical frontend origin is `http://127.0.0.1:5510`.
+- The backend must be available at the configured API base URL.
+- No frontend package installation, bundler, or JavaScript framework is required.
