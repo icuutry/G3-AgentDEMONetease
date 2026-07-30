@@ -2,6 +2,9 @@ import { STATUS, STEP_NAMES } from './demo-data.js';
 import {
   findDuplicates, money, n, pct, REQUIRED_APPLICATION_FIELDS, requiredMissing
 } from './risk-engine.js';
+import {
+  fieldProvenance, providerRetrieved
+} from './provenance.js';
 
 export const esc = value => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
 export const fmtTime = timestamp => {
@@ -232,7 +235,7 @@ function stepOne(app, errors) {
   return `<div class="data-source-panel">
       <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated MyInfo</h3>
         <p>Use simulated government data to prefill eligible identity fields. No real government service is contacted.</p></div>
-      <span class="source-status ${app.myinfoPulled ? 'is-ready' : ''}">${app.myinfoPulled ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
+      <span class="source-status ${app.myinfoPulled === true ? 'is-ready' : ''}">${app.myinfoPulled === true ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
       <div class="data-source-actions">${button('Use MyInfo simulated authorization', 'pull-myinfo', 'source-action')}${button('View authorization scope', 'toggle-scope', 'source-secondary')}</div>
     </div>
     <div id="scope-note" class="note scope-note" hidden>Scope: name, masked NRIC / FIN, age, residency status, phone number, education, and marital status.</div>
@@ -249,19 +252,19 @@ function stepTwo(app, errors) {
   return `<div class="data-source-panel compact-source">
       <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated CPF contribution record</h3>
         <p>Retrieve synthetic contribution data to verify monthly income. Employment details and declared income must still be entered by the applicant.</p></div>
-      <span class="source-status ${app.cpfPulled ? 'is-ready' : ''}">${app.cpfPulled ? 'Retrieved &middot; Verified income available' : 'Demo data &middot; Verified income not retrieved'}</span>
+      <span class="source-status ${app.cpfPulled === true ? 'is-ready' : ''}">${app.cpfPulled === true ? 'Retrieved &middot; CPF record linked' : 'Demo data &middot; CPF record not retrieved'}</span>
       <div class="data-source-actions">${button('Retrieve simulated CPF contribution record', 'pull-cpf', 'source-action')}</div>
     </div>
     <div class="grid2">${select(app, 'empType', 'Employment type', ['Full-time employee', 'Self-employed / part-time', 'Contract employee'])}
     ${field(app, 'employer', 'Employer / business', 'text', false, errors)}${field(app, 'title', 'Job title', 'text', false, errors)}${field(app, 'empMonths', 'Months in current employment', 'number', false, errors)}
-    ${field(app, 'incomeDeclared', 'Declared monthly income (S$)', 'number', false, errors)}${field(app, 'incomeVerified', 'Verified monthly income (S$)', 'number', true, errors)}</div>`;
+    ${field(app, 'incomeDeclared', 'Declared monthly income (S$)', 'number', false, errors)}${field(app, 'incomeVerified', 'Recorded monthly income (S$)', 'number', false, errors)}</div>`;
 }
 
 function stepThree(app, errors) {
   return `<div class="data-source-panel compact-source">
       <div class="data-source-copy"><span class="source-kicker">Retrieve verified information</span><h3>Simulated credit report</h3>
         <p>Use synthetic credit data to prefill the commitments below. No credit bureau is contacted.</p></div>
-      <span class="source-status ${app.creditPulled ? 'is-ready' : ''}">${app.creditPulled ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
+      <span class="source-status ${app.creditPulled === true ? 'is-ready' : ''}">${app.creditPulled === true ? 'Retrieved · Prefilled fields are editable' : 'Demo data · Not retrieved'}</span>
       <div class="data-source-actions">${button('Authorize simulated credit report retrieval', 'pull-credit', 'source-action')}</div>
     </div>
     <div class="grid2">${field(app, 'existingMonthly', 'Existing monthly repayments (S$)', 'number', false, errors)}
@@ -297,7 +300,7 @@ function stepFive(app, assessment) {
       <div class="review-row"><span>Job title</span><strong>${reviewText(app.title)}</strong></div>
       <div class="review-row"><span>Months employed</span><strong>${reviewText(app.empMonths)}</strong></div>
       <div class="review-row"><span>Declared monthly income</span><strong>${reviewMoney(app.incomeDeclared)}</strong></div>
-      <div class="review-row"><span>Verified monthly income</span><strong>${reviewMoney(app.incomeVerified)}</strong></div>
+      <div class="review-row"><span>Recorded monthly income</span><strong>${reviewMoney(app.incomeVerified)}</strong></div>
     </section>
     <section class="review-group"><h3>Debt and credit</h3>
       <div class="review-row"><span>Monthly repayments</span><strong>${reviewMoney(app.existingMonthly)}</strong></div>
@@ -631,38 +634,31 @@ export function queueView(apps, query) {
 }
 
 const PROFILE_FIELDS = [
-  ['name', 'Full name', 'MyInfo', true], ['nric', 'NRIC / FIN', 'MyInfo', false], ['age', 'Age', 'MyInfo', false],
-  ['residency', 'Residency status', 'MyInfo', false], ['employer', 'Employer / business', 'Applicant', true], ['title', 'Job title', 'Applicant', false],
-  ['empMonths', 'Months employed', 'Applicant', true], ['incomeDeclared', 'Declared monthly income', 'Applicant', true],
-  ['incomeVerified', 'Verified monthly income', 'CPF Sandbox', true], ['existingMonthly', 'Existing monthly repayments', 'Credit Sandbox', true],
-  ['outstanding', 'Outstanding debt', 'Credit Sandbox', true], ['latePayments', 'Late payments', 'Credit Sandbox', true],
-  ['carPrice', 'Vehicle price', 'Applicant', true], ['omv', 'OMV', 'Applicant', true], ['downPayment', 'Down payment', 'Applicant', true],
-  ['loanAmount', 'Loan amount', 'Applicant', true], ['tenureYears', 'Loan tenure', 'Applicant', true]
+  ['name', 'Full name', true], ['nric', 'NRIC / FIN', false], ['age', 'Age', false],
+  ['residency', 'Residency status', false], ['employer', 'Employer / business', true], ['title', 'Job title', false],
+  ['empMonths', 'Months employed', true], ['incomeDeclared', 'Declared monthly income', true],
+  ['incomeVerified', 'Recorded monthly income', true], ['existingMonthly', 'Existing monthly repayments', true],
+  ['outstanding', 'Outstanding debt', true], ['latePayments', 'Late payments', true],
+  ['carPrice', 'Vehicle price', true], ['omv', 'OMV', true], ['downPayment', 'Down payment', true],
+  ['loanAmount', 'Loan amount', true], ['tenureYears', 'Loan tenure', true]
 ];
 const MONEY_FIELDS = new Set(['incomeDeclared', 'incomeVerified', 'existingMonthly', 'outstanding', 'carPrice', 'omv', 'downPayment', 'loanAmount']);
 
 function profileHtml(app) {
-  const sourceState = source => {
-    if (source === 'Applicant') return ['Self-declared', 'declared'];
-    if (source === 'MyInfo') return [app.myinfoPulled ? 'Verified' : 'Not retrieved', app.myinfoPulled ? 'verified' : 'pending'];
-    if (source === 'CPF Sandbox') return [(app.cpfPulled || n(app.incomeVerified) > 0) ? 'Verified' : 'Not retrieved', (app.cpfPulled || n(app.incomeVerified) > 0) ? 'verified' : 'pending'];
-    if (source === 'Credit Sandbox') return [app.creditPulled ? 'Verified' : 'Not retrieved', app.creditPulled ? 'verified' : 'pending'];
-    return ['Reference', 'pending'];
-  };
-  return `<div class="fgroup profile-group"><b>Applicant data and provenance</b>${PROFILE_FIELDS.map(([key, label, source, model]) => {
+  return `<div class="fgroup profile-group"><b>Applicant data and provenance</b>${PROFILE_FIELDS.map(([key, label, model]) => {
     const value = MONEY_FIELDS.has(key) ? money(app[key]) : key === 'tenureYears' ? `${esc(app[key])} years` : esc(app[key] || '—');
-    const [stateLabel, stateClass] = sourceState(source);
+    const { sourceLabel, stateLabel, stateClass } = fieldProvenance(app, key);
     return `<div class="frow" id="f_${key}"><div class="k">${label}</div><div class="v ${MONEY_FIELDS.has(key) ? 'mono' : ''}">${value}</div>
-      <div class="chips"><span class="chip">${source}</span><span class="chip ${stateClass}">${stateLabel}</span><span class="chip ${model ? 'model' : 'ref'}">${model ? 'Used in assessment' : 'Reference only'}</span></div></div>`;
+      <div class="chips"><span class="chip">${esc(sourceLabel)}</span><span class="chip ${esc(stateClass)}">${esc(stateLabel)}</span><span class="chip ${model ? 'model' : 'ref'}">${model ? 'Used in assessment' : 'Reference only'}</span></div></div>`;
   }).join('')}</div><div class="profile-actions">${button('View original submission', 'show-original', 'sm')}</div>`;
 }
 
 function checksHtml(app, result, allApps) {
   const missing = requiredMissing(app), duplicates = findDuplicates(app, allApps), metrics = result.metrics;
   const checks = [
-    ['MyInfo authorization', app.myinfoPulled, app.myinfoPulled ? 'Retrieved' : 'Not retrieved'],
-    ['CPF contribution record', app.cpfPulled || n(app.incomeVerified) > 0, n(app.incomeVerified) > 0 ? 'Retrieved' : 'Not retrieved'],
-    ['Credit report authorization', app.creditPulled, app.creditPulled ? 'Retrieved' : 'Not retrieved'],
+    ['MyInfo authorization', providerRetrieved(app, 'myinfo'), providerRetrieved(app, 'myinfo') ? 'Retrieved' : 'Not retrieved'],
+    ['CPF contribution record', providerRetrieved(app, 'cpf'), providerRetrieved(app, 'cpf') ? 'Retrieved' : 'Not retrieved'],
+    ['Credit report authorization', providerRetrieved(app, 'creditReport'), providerRetrieved(app, 'creditReport') ? 'Retrieved' : 'Not retrieved'],
     ['Required information', missing.length === 0, missing.length ? `${missing.length} missing` : 'Complete']
   ];
   const consistency = [
@@ -703,7 +699,7 @@ function decisionHtml(app, result, decisionState) {
     <div class="note recommendation-note"><span class="recommendation-kicker">Model recommendation</span><b>${esc(result.recommendation)}</b><p>The model provides advice only. The loan officer remains responsible for the final decision.</p></div>
     <details style="margin:12px 0"><summary class="btn sm">Adjust parameters and rerun</summary><div style="margin-top:12px">
       <label class="f"><span>Down payment (S$)</span><input id="s-down" type="number" value="${n(app.downPayment)}"></label>
-      <label class="f"><span>Verified monthly income (S$)</span><input id="s-income" type="number" value="${n(app.incomeVerified)}"></label>
+      <label class="f"><span>Monthly income override (S$)</span><input id="s-income" type="number" value="${n(app.incomeVerified)}"></label>
       ${button('Recalculate', 'rerun-risk', 'sm', `data-id="${app.id}"`)}<div id="rerun-output" style="margin-top:10px"></div></div></details>
     <div class="hr thick"></div><div class="human-decision-heading"><div><b class="section-label">Human decision</b><span>Officer-owned outcome</span></div></div>
     ${locked ? `<div class="note ${app.status === 'rejected' ? 'bad' : ''}" style="margin-top:10px"><b>Completed: ${app.decision}</b><br>${esc(app.officerNote)}</div>` :

@@ -99,11 +99,9 @@ assert.match(
   stepTwoHtml,
   /Employment details and declared income must still be entered by the applicant\./
 );
-assert.match(stepTwoHtml, /Demo data &middot; Verified income not retrieved/);
-assert.match(
-  stepTwoHtml,
-  /Retrieved from simulated CPF contribution data &middot; Read only/
-);
+assert.match(stepTwoHtml, /Demo data &middot; CPF record not retrieved/);
+assert.match(stepTwoHtml, /name="incomeVerified"[^>]*type="number"/);
+assert.doesNotMatch(stepTwoHtml, /name="incomeVerified"[^>]*readonly/);
 
 const retrievedStepTwoHtml = formView({
   app: {
@@ -117,6 +115,6 @@ const retrievedStepTwoHtml = formView({
   step: 2,
   assessment: evaluate(completeApplication)
 });
-assert.match(retrievedStepTwoHtml, /Retrieved &middot; Verified income available/);
+assert.match(retrievedStepTwoHtml, /Retrieved &middot; CPF record linked/);
 
 console.log('RISK_ENGINE_VALIDATION_TEST_OK');

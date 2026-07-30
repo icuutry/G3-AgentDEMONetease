@@ -5,6 +5,9 @@ import {
   evaluate, money, normalizeRequiredTextValues, pct, validateFormAction
 } from './risk-engine.js';
 import {
+  applyProvenanceAwareEdit, applyProviderRetrieval, invalidatedProviderFlags
+} from './provenance.js';
+import {
   applicantHomeView, auditView, caseView, formView, homeView, loginView, notFoundView,
   queueView, statusView, supplementView, unauthorizedView
 } from './views.js?v=20260730-ui-final-1';
@@ -321,20 +324,24 @@ async function persistInvalidRequiredText(draft, validation) {
       .filter(error => typeof draft?.[error.key] === 'string')
       .map(error => [error.key, draft[error.key]])
   );
-  if (!draft?.id || !Object.keys(clearedText).length) return;
+  const changes = {
+    ...clearedText,
+    ...invalidatedProviderFlags(draft)
+  };
+  if (!draft?.id || !Object.keys(changes).length) return;
 
-  const saved = await api.updateApplication(draft.id, clearedText);
+  const saved = await api.updateApplication(draft.id, changes);
   activeDraft = { ...saved, ...draft };
   activeDraftId = activeDraft.id;
   const index = applicationsCache.findIndex(application => application.id === activeDraft.id);
   if (index >= 0) applicationsCache[index] = activeDraft;
 }
 
-async function retrieveMockData(retrieve, description) {
+async function retrieveMockData(providerKey, retrieve, description) {
   const draft = await saveActiveDraft();
   if (!draft) return;
   const response = await retrieve(draft.id, selectedMockPersona);
-  activeDraft = response.application;
+  activeDraft = applyProviderRetrieval(draft, response.application, providerKey);
   activeDraftId = activeDraft.id;
   reconcileFormValidation(activeDraft);
   showMessage(`${description} retrieved from ${response.label || response.provider}.`);
@@ -403,9 +410,14 @@ async function handleAction(button) {
   if (action === 'load-preset') {
     selectedMockPersona = button.dataset.kind;
     let draft = await saveActiveDraft();
-    for (const retrieve of [api.retrieveMyInfo, api.retrieveCpf, api.retrieveCreditReport]) {
+    const providers = [
+      ['myinfo', api.retrieveMyInfo],
+      ['cpf', api.retrieveCpf],
+      ['creditReport', api.retrieveCreditReport]
+    ];
+    for (const [providerKey, retrieve] of providers) {
       const response = await retrieve(draft.id, selectedMockPersona);
-      draft = response.application;
+      draft = applyProviderRetrieval(draft, response.application, providerKey);
       activeDraft = draft;
       activeDraftId = draft.id;
     }
@@ -430,7 +442,7 @@ async function handleAction(button) {
     return render();
   }
   if (action === 'pull-myinfo') {
-    return retrieveMockData(api.retrieveMyInfo, 'MyInfo Sandbox details');
+    return retrieveMockData('myinfo', api.retrieveMyInfo, 'MyInfo Sandbox details');
   }
   if (action === 'toggle-scope') {
     const note = document.getElementById('scope-note');
@@ -438,10 +450,10 @@ async function handleAction(button) {
     return;
   }
   if (action === 'pull-cpf') {
-    return retrieveMockData(api.retrieveCpf, 'Synthetic CPF contribution record');
+    return retrieveMockData('cpf', api.retrieveCpf, 'Synthetic CPF contribution record');
   }
   if (action === 'pull-credit') {
-    return retrieveMockData(api.retrieveCreditReport, 'Synthetic credit report');
+    return retrieveMockData('creditReport', api.retrieveCreditReport, 'Synthetic credit report');
   }
   if (action === 'submit-application') {
     const currentDraft = collectApplicationForm();
@@ -643,6 +655,11 @@ document.addEventListener('click', async event => {
 appRoot.addEventListener('input', event => {
   if (event.target.id === 'officer-note') updateDecisionButton();
   if (event.target.closest('#application-form')) {
+    activeDraft = applyProvenanceAwareEdit(
+      activeDraft,
+      event.target.name,
+      event.target.type === 'checkbox' ? event.target.checked : event.target.value
+    );
     const draft = collectApplicationForm();
     clearResolvedFieldError(event.target, draft);
     refreshLtvCheck(draft);
@@ -651,6 +668,11 @@ appRoot.addEventListener('input', event => {
 
 appRoot.addEventListener('change', event => {
   if (event.target.closest('#application-form')) {
+    activeDraft = applyProvenanceAwareEdit(
+      activeDraft,
+      event.target.name,
+      event.target.type === 'checkbox' ? event.target.checked : event.target.value
+    );
     const draft = collectApplicationForm();
     clearResolvedFieldError(event.target, draft);
     refreshLtvCheck(draft);
