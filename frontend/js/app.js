@@ -8,6 +8,7 @@ import {
 import {
   applyProvenanceAwareEdit, applyProviderRetrieval, invalidatedProviderFlags
 } from './provenance.js';
+import { createSupplementState } from './supplement-state.js';
 import {
   applicantHomeView, auditView, caseView, formView, homeView, loginView, notFoundView,
   queueView, statusView, supplementView, unauthorizedView
@@ -24,6 +25,7 @@ let activeDraftId = null;
 let activeDraft = null;
 let uploads = [];
 const decisionState = createDecisionState();
+const supplementState = createSupplementState();
 let selectedMockPersona = 'low';
 let queueFilters = { kw: '', status: '', level: '' };
 let applicationsCache = [];
@@ -39,6 +41,7 @@ function clearTemporaryState() {
   activeDraft = null;
   uploads = [];
   decisionState.clear();
+  supplementState.clear();
   selectedMockPersona = 'low';
   queueFilters = { kw: '', status: '', level: '' };
   applicationsCache = [];
@@ -169,9 +172,19 @@ async function getApplicationOrNull(applicationId) {
   }
 }
 
+function captureSupplementNote() {
+  const form = document.getElementById('supplement-form');
+  const note = form?.elements?.supplementNote;
+  if (form?.dataset?.id && note) {
+    supplementState.capture(form.dataset.id, note.value);
+  }
+}
+
 async function render() {
+  captureSupplementNote();
   const [page = '', id] = routeParts();
   decisionState.reconcileRoute(page, id);
+  if (supplementState.reconcileRoute(page, id)) uploads = [];
   document.getElementById('who').textContent = currentUser
     ? `Signed in as ${currentUser.displayName || (currentUser.role === 'applicant' ? 'Applicant' : 'Loan Officer')}`
     : 'Not signed in';
@@ -232,7 +245,10 @@ async function render() {
     } else {
       const application = await getApplicationOrNull(id);
       appRoot.innerHTML = application
-        ? supplementView(application, uploads.map(file => file.name))
+        ? supplementView({
+          ...application,
+          supplementNote: supplementState.noteFor(id, application.supplementNote)
+        }, uploads.map(file => file.name))
         : notFoundView();
     }
   } else if (page === 'queue') {
@@ -475,6 +491,7 @@ async function handleAction(button) {
     return navigate(`#/status/${activeDraft.id}`);
   }
   if (action === 'mock-upload') {
+    captureSupplementNote();
     uploads.push({
       name: `bank_statement_${uploads.length + 1}.pdf`,
       size: 0,
@@ -483,12 +500,14 @@ async function handleAction(button) {
     return render();
   }
   if (action === 'submit-supplement') {
-    if (!uploads.length) return showMessage('Add at least one simulated file before submitting.');
     const form = document.getElementById('supplement-form');
+    supplementState.capture(form.dataset.id, form.elements.supplementNote.value);
+    if (!uploads.length) return showMessage('Add at least one simulated file before submitting.');
     const application = await api.submitSupplement(form.dataset.id, {
-      note: form.elements.supplementNote.value.trim(),
+      note: supplementState.noteFor(form.dataset.id).trim(),
       files: uploads
     });
+    supplementState.markSubmissionSucceeded(form.dataset.id);
     uploads = [];
     activeDraft = application;
     activeDraftId = application.id;
@@ -654,6 +673,12 @@ document.addEventListener('click', async event => {
 
 appRoot.addEventListener('input', event => {
   if (event.target.id === 'officer-note') updateDecisionButton();
+  if (event.target.name === 'supplementNote' && event.target.closest('#supplement-form')) {
+    supplementState.capture(
+      event.target.closest('#supplement-form').dataset.id,
+      event.target.value
+    );
+  }
   if (event.target.closest('#application-form')) {
     activeDraft = applyProvenanceAwareEdit(
       activeDraft,
