@@ -15,9 +15,12 @@ Use the repository-root Windows launcher rather than opening `index.html` direct
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\run-demo.ps1
+.\run-demo.ps1 -FreshDemo
 ```
 
 The backend virtual environment and runtime dependencies must already be installed as described in the root [README](../README.md).
+
+Normal launch preserves the current local demo records and does not reset the database automatically. `-FreshDemo` is recommended for judging, presentations, final verification, and clean screenshots: it restores and validates the five current seeded applications before opening the browser.
 
 Local addresses:
 
@@ -26,7 +29,17 @@ Local addresses:
 - API health check: `http://127.0.0.1:8000/health`
 - Swagger UI: `http://127.0.0.1:8000/docs`
 
-The launcher refuses to reuse occupied ports, starts both services as background child processes, waits for readiness, opens the browser with a cache-busting URL, and stops only those child processes when Enter is pressed. Logs are written to the repository-root `demo-logs/` directory.
+The active frontend server is `scripts/serve_frontend_no_cache.py`, a Python standard-library static server. Every frontend response includes:
+
+```http
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
+```
+
+The current frontend build marker is `20260730-ui-final-2`. `index.html` references `styles.css` and `app.js` with that asset version, `app.js` imports `views.js` with the same version, and `document.documentElement` exposes the current build through its `data-app-build` attribute.
+
+The launcher refuses to reuse occupied ports, starts both services as background child processes, and waits for readiness. When Chrome is available, it opens the demo with a temporary isolated Chrome profile. The isolated profile and explicit no-cache responses avoid stale assets and previous browser-session state. Pressing Enter stops the backend, frontend, and only the isolated Chrome process created by the launcher, then removes its temporary profile. Logs are written to the repository-root `demo-logs/` directory.
 
 ## Demo accounts
 
@@ -68,21 +81,38 @@ frontend/
     api.js
     api-mappers.js
     app.js
+    csv.js
+    decision-state.js
     demo-data.js
+    provenance.js
     risk-engine.js
-    store.js
+    supplement-state.js
     views.js
 ```
 
 - `index.html` provides the application shell and global-header controls.
 - `css/styles.css` contains global, page-specific, responsive, and accessibility styles.
-- `js/app.js` coordinates startup, hash routing, session restoration, role checks, form interactions, API calls, and rendering.
-- `js/views.js` renders the landing page, authentication views, Applicant workflow, Officer workflow, and audit views.
 - `js/api.js` is the active `fetch()` adapter for the FastAPI backend.
-- `js/api-mappers.js` serializes frontend application data and normalizes backend responses.
-- `js/risk-engine.js` provides deterministic calculations, client-side previews, and form validation shared by the UI.
-- `js/demo-data.js` contains frontend labels, statuses, rules-version metadata, and full-form demo presets.
-- `js/store.js` is a legacy local-storage module retained in the repository; the active application does not import it or use it as the data layer.
+- `js/api-mappers.js` serializes frontend application payloads and normalizes backend responses.
+- `js/app.js` coordinates startup, routing, sessions, event handling, API calls, and rendering.
+- `js/csv.js` safely serializes audit exports, including protection against spreadsheet-formula injection.
+- `js/decision-state.js` keeps temporary Officer decision state bound to the current application.
+- `js/demo-data.js` contains frontend labels, statuses, rules-version metadata, and demo form presets.
+- `js/provenance.js` tracks simulated provider retrieval and invalidates provider status when retrieved fields are manually edited.
+- `js/risk-engine.js` provides deterministic client-side calculations, previews, and form validation.
+- `js/supplement-state.js` preserves temporary supplementary-note state across simulated file rerenders.
+- `js/views.js` renders Applicant, Officer, authentication, status, supplement, and audit views.
+
+Repository-level launcher support:
+
+```text
+scripts/
+  serve_frontend_no_cache.py
+  test_cache_launcher.py
+```
+
+- `scripts/serve_frontend_no_cache.py` is the standard-library static server that serves the frontend with explicit no-cache headers.
+- `scripts/test_cache_launcher.py` contains focused tests for build-version references, no-cache serving, and launcher behavior.
 
 ## Current architecture
 
