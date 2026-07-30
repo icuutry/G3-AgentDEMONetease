@@ -644,9 +644,23 @@ const PROFILE_FIELDS = [
 ];
 const MONEY_FIELDS = new Set(['incomeDeclared', 'incomeVerified', 'existingMonthly', 'outstanding', 'carPrice', 'omv', 'downPayment', 'loanAmount']);
 
+function isMissingEvidence(value) {
+  return value == null || (typeof value === 'string' && value.trim() === '');
+}
+
+function formatProfileValue(key, value) {
+  if (isMissingEvidence(value)) return '—';
+  if (MONEY_FIELDS.has(key)) return money(value);
+  if (key === 'tenureYears') {
+    const tenure = typeof value === 'string' ? value.trim() : value;
+    return `${esc(tenure)} ${Number(tenure) === 1 ? 'year' : 'years'}`;
+  }
+  return esc(value);
+}
+
 function profileHtml(app) {
   return `<div class="fgroup profile-group"><b>Applicant data and provenance</b>${PROFILE_FIELDS.map(([key, label, model]) => {
-    const value = MONEY_FIELDS.has(key) ? money(app[key]) : key === 'tenureYears' ? `${esc(app[key])} years` : esc(app[key] || '—');
+    const value = formatProfileValue(key, app[key]);
     const { sourceLabel, stateLabel, stateClass } = fieldProvenance(app, key);
     return `<div class="frow" id="f_${key}"><div class="k">${label}</div><div class="v ${MONEY_FIELDS.has(key) ? 'mono' : ''}">${value}</div>
       <div class="chips"><span class="chip">${esc(sourceLabel)}</span><span class="chip ${esc(stateClass)}">${esc(stateLabel)}</span><span class="chip ${model ? 'model' : 'ref'}">${model ? 'Used in assessment' : 'Reference only'}</span></div></div>`;
