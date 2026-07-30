@@ -580,19 +580,22 @@ const readableRule = value => {
 };
 
 export function queueView(apps, query) {
+  const keyword = String(query?.kw ?? '').trim().toLowerCase();
   const assessed = apps.map(app => ({ app, result: query.assessments[app.id] })).filter(({ app, result }) => {
-    const keyword = query.kw.toLowerCase();
-    return (!keyword || app.id.toLowerCase().includes(keyword) || app.name.toLowerCase().includes(keyword))
+    const applicationId = String(app?.id ?? '').toLowerCase();
+    const applicantName = String(app?.name ?? '').toLowerCase();
+    return (!keyword || applicationId.includes(keyword) || applicantName.includes(keyword))
       && (!query.status || app.status === query.status) && (!query.level || result.level === query.level);
   });
   const pending = apps.filter(app => ['submitted', 'reviewing', 'need_info'].includes(app.status)).length;
   const activeFilters = [query.kw, query.status, query.level].filter(Boolean).length;
   const rows = assessed.map(({ app, result }) => {
+    const applicantName = String(app?.name ?? '').trim();
     const riskClass = result.level === 'Low' ? 't-ok' : result.level === 'High' ? 't-bad' : 't-warn';
     const priorityClass = ['submitted', 'reviewing'].includes(app.status) ? 'queue-row-active' : '';
     return `<tr class="${priorityClass}">
       <td data-label="Application"><b class="mono queue-id">${app.id}</b></td>
-      <td data-label="Applicant"><b class="queue-applicant">${esc(app.name)}</b></td>
+      <td data-label="Applicant"><b class="queue-applicant">${esc(applicantName || '—')}</b></td>
       <td data-label="Loan" class="mono">${money(app.loanAmount)}</td>
       <td data-label="Status">${tag(app.status)}</td>
       <td data-label="Risk"><span class="queue-risk"><span class="tag ${riskClass}">${result.level}</span><b class="mono">${result.score}</b></span></td>
