@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import os
 
 os.environ["CAR_LOAN_DATABASE_URL"] = "sqlite:///./test_car_loan_agent.db"
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.database import Base, SessionLocal, engine
 from app.main import app
+from app.seed import PRESETS
 
 
 LOW_PAYLOAD = {
@@ -243,6 +245,182 @@ def test_authenticated_wrong_roles_remain_forbidden(client: TestClient) -> None:
     assert officer_endpoint.status_code == 403
     assert applicant_endpoint.status_code == 403
     assert officer_decision.status_code == 403
+
+
+def test_forced_demo_reset_creates_distinct_final_seed_contract(
+    client: TestClient,
+) -> None:
+    officer_headers = auth_header(token(client, "officer"))
+    applicant_headers = auth_header(token(client, "applicant"))
+
+    assert client.post("/demo/reset", headers=applicant_headers).status_code == 403
+    reset = client.post("/demo/reset", headers=officer_headers)
+    assert reset.status_code == 200
+    assert reset.json() == {"status": "reset"}
+
+    response = client.get("/applications", headers=officer_headers)
+    assert response.status_code == 200
+    applications = response.json()["items"]
+    assert response.json()["total"] == 5
+    assert {application["id"] for application in applications} == {
+        f"CAR-2026-{index:03d}" for index in range(1, 6)
+    }
+    by_id = {application["id"]: application for application in applications}
+
+    expected_identity_vehicle_status = {
+        "CAR-2026-001": ("Sarah Lee", "Nissan Sylphy 1.6", "approved"),
+        "CAR-2026-002": ("Daniel Lim", "Honda Civic 1.5 Turbo", "reviewing"),
+        "CAR-2026-003": ("Marcus Wong", "Mazda 3 1.5", "rejected"),
+        "CAR-2026-004": (
+            "Daniel Lim (second application)",
+            "Honda HR-V 1.5",
+            "need_info",
+        ),
+        "CAR-2026-005": ("Amelia Tan", "Toyota Corolla Altis 1.6", "reviewing"),
+    }
+    for application_id, expected in expected_identity_vehicle_status.items():
+        application = by_id[application_id]
+        assert (
+            application["name"],
+            application["carModel"],
+            application["status"],
+        ) == expected
+
+    assert {
+        field: by_id["CAR-2026-001"][field]
+        for field in ("nric", "phone", "employer", "title")
+    } == {
+        "nric": "S8••••42H",
+        "phone": "8•••3519",
+        "employer": "Meridian Supply Pte. Ltd.",
+        "title": "Operations Executive",
+    }
+    assert by_id["CAR-2026-001"]["decision"] == "Approve"
+    assert by_id["CAR-2026-001"]["officerNote"] == (
+        "Stable verified income and low debt."
+    )
+    assert by_id["CAR-2026-001"]["nric"] != by_id["CAR-2026-005"]["nric"]
+    assert by_id["CAR-2026-002"]["nric"] == by_id["CAR-2026-004"]["nric"]
+    duplicate_groups = [
+        sorted(
+            application["id"]
+            for application in applications
+            if application["nric"] == nric
+        )
+        for nric, count in Counter(
+            application["nric"] for application in applications
+        ).items()
+        if count > 1
+    ]
+    assert duplicate_groups == [["CAR-2026-002", "CAR-2026-004"]]
+    assert len({application["carModel"] for application in applications}) == 5
+
+    status_counts = Counter(application["status"] for application in applications)
+    assert {
+        "all": len(applications),
+        "open": sum(
+            status_counts[status] for status in ("submitted", "reviewing", "need_info")
+        ),
+        "approved": status_counts["approved"],
+        "rejected": status_counts["rejected"],
+    } == {"all": 5, "open": 3, "approved": 1, "rejected": 1}
+
+    financial_fields = (
+        "carPrice",
+        "omv",
+        "carAge",
+        "downPayment",
+        "loanAmount",
+        "tenureYears",
+    )
+    preset_for_case = {
+        "CAR-2026-001": "low",
+        "CAR-2026-002": "medium",
+        "CAR-2026-003": "high",
+        "CAR-2026-004": "medium",
+        "CAR-2026-005": "low",
+    }
+    for application_id, preset_name in preset_for_case.items():
+        for field in financial_fields:
+            assert by_id[application_id][field] == PRESETS[preset_name][field]
+
+    expected_risk = {
+        "CAR-2026-001": (23, "low", "approve"),
+        "CAR-2026-002": (60, "medium", "manual_review"),
+        "CAR-2026-003": (77, "high", "reject"),
+        "CAR-2026-004": (60, "medium", "manual_review"),
+        "CAR-2026-005": (23, "low", "approve"),
+    }
+    for application_id, expected in expected_risk.items():
+        assessment = by_id[application_id]["riskAssessment"]
+        assert assessment is not None
+        assert (
+            assessment["score"],
+            assessment["level"],
+            assessment["recommendation"],
+        ) == expected
+        duplicate_factor = any(
+            factor["id"] == "DUP" for factor in assessment["factors"]
+        )
+        assert duplicate_factor is (
+            application_id in {"CAR-2026-002", "CAR-2026-004"}
+        )
+
+    assert "second application" in by_id["CAR-2026-004"]["name"].lower()
+    assert by_id["CAR-2026-004"]["needInfoReason"] == (
+        "Please provide complete bank statements for the last three months."
+    )
+    expected_lifecycle_actions = {
+        "CAR-2026-001": {"submitted", "risk_assessed", "approved"},
+        "CAR-2026-002": {"submitted", "risk_assessed"},
+        "CAR-2026-003": {"submitted", "risk_assessed", "rejected"},
+        "CAR-2026-004": {
+            "submitted",
+            "risk_assessed",
+            "information_requested",
+        },
+        "CAR-2026-005": {"submitted", "risk_assessed"},
+    }
+    for application_id, expected_actions in expected_lifecycle_actions.items():
+        audit = client.get(
+            "/audit-logs",
+            params={"applicationId": application_id},
+            headers=officer_headers,
+        )
+        assert audit.status_code == 200
+        actions = {item["actionCode"] for item in audit.json()["items"]}
+        assert expected_actions.issubset(actions)
+    assert PRESETS["low"]["name"] == "Amelia Tan"
+    assert PRESETS["low"]["carModel"] == "Toyota Corolla Altis 1.6"
+    assert PRESETS["medium"]["carModel"] == "Honda Civic 1.5 Turbo"
+    assert PRESETS["high"]["carModel"] == "Mazda 3 1.5"
+
+
+def test_explicit_blank_residency_create_keeps_other_new_draft_defaults(
+    client: TestClient,
+) -> None:
+    applicant_headers = auth_header(token(client, "applicant"))
+    response = client.post(
+        "/applications",
+        json={"residency": ""},
+        headers=applicant_headers,
+    )
+    assert response.status_code == 201
+    application = response.json()
+    assert application["residency"] == ""
+    assert {
+        field: application[field]
+        for field in ("name", "nric", "phone", "education", "marital")
+    } == {
+        "name": "",
+        "nric": "",
+        "phone": "",
+        "education": "",
+        "marital": "",
+    }
+    assert application["age"] is None
+    assert application["myinfoPulled"] is False
+    assert application["consent"] is False
 
 
 def test_complete_submit_review_supplement_approve_flow(client: TestClient) -> None:

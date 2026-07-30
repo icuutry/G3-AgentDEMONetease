@@ -110,12 +110,29 @@ def seed_demo(db: Session, force: bool = False) -> None:
         ("medium", "need_info", None, ""),
         ("low", "reviewing", None, ""),
     ]
+    case_overrides = {
+        1: {
+            "name": "Sarah Lee",
+            "nric": "S8••••42H",
+            "phone": "8•••3519",
+            "employer": "Meridian Supply Pte. Ltd.",
+            "title": "Operations Executive",
+            "carModel": "Nissan Sylphy 1.6",
+        },
+        4: {
+            "carModel": "Honda HR-V 1.5",
+        },
+    }
     now = datetime.now(UTC).replace(tzinfo=None)
     applications = []
     for index, (preset, app_status, decision, officer_note) in enumerate(
         definitions, start=1
     ):
         created = now - timedelta(days=7 - index)
+        application_values = {
+            **PRESETS[preset],
+            **case_overrides.get(index, {}),
+        }
         application = Application(
             id=f"CAR-2026-{index:03d}",
             applicantId="applicant-demo",
@@ -129,7 +146,7 @@ def seed_demo(db: Session, force: bool = False) -> None:
             creditPulled=True,
             decision=decision,
             officerNote=officer_note,
-            **PRESETS[preset],
+            **application_values,
         )
         if index == 4:
             application.name += " (second application)"

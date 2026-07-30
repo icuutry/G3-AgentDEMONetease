@@ -32,10 +32,16 @@ const field = (app, key, label, type = 'text', readonly = false, errors = {}) =>
     ${error ? `<small class="field-error-message" id="${errorId}">${esc(error)}</small>` : ''}
   </label>`;
 };
-const select = (app, key, label, options) => `
+const select = (app, key, label, options, { placeholder = '' } = {}) => {
+  const currentValue = String(app[key] ?? '');
+  const placeholderOption = placeholder
+    ? `<option value="" disabled ${currentValue.trim() === '' ? 'selected' : ''}>${esc(placeholder)}</option>`
+    : '';
+  return `
   <label class="f"><span class="field-label">${label}</span><select name="${key}">
-    ${options.map(option => `<option ${String(app[key]) === String(option) ? 'selected' : ''}>${option}</option>`).join('')}
+    ${placeholderOption}${options.map(option => `<option value="${esc(option)}" ${currentValue === String(option) ? 'selected' : ''}>${esc(option)}</option>`).join('')}
   </select></label>`;
+};
 const formStepDetails = [
   ['Applicant details', 'Provide your identity details and authorize simulated data retrieval.'],
   ['Employment & income', 'Add your employment information and retrieve a simulated contribution record.'],
@@ -240,7 +246,7 @@ function stepOne(app, errors) {
     </div>
     <div id="scope-note" class="note scope-note" hidden>Scope: name, masked NRIC / FIN, age, residency status, phone number, education, and marital status.</div>
     <div class="grid2">${field(app, 'name', 'Full name', 'text', false, errors)}${field(app, 'nric', 'NRIC / FIN', 'text', false, errors)}
-      ${field(app, 'age', 'Age', 'number', false, errors)}${select(app, 'residency', 'Residency status', ['Singapore Citizen', 'Permanent Resident', 'Work Pass Holder'])}
+      ${field(app, 'age', 'Age', 'number', false, errors)}${select(app, 'residency', 'Residency status', ['Singapore Citizen', 'Permanent Resident', 'Work Pass Holder'], { placeholder: 'Select residency status' })}
       ${field(app, 'phone', 'Mobile number', 'text', false, errors)}${field(app, 'education', 'Highest education', 'text', false, errors)}
       ${field(app, 'marital', 'Marital status', 'text', false, errors)}</div>
     <label class="consent ${consentError ? 'field-error' : ''}"><input name="consent" type="checkbox" style="width:auto" required aria-required="true" ${app.consent ? 'checked' : ''} ${consentError ? 'aria-invalid="true" aria-describedby="error-consent"' : ''}>
@@ -698,12 +704,36 @@ function decisionHtml(app, result, decisionState) {
     ? decisionState.action
     : null;
   const decisionData = action => `data-decision="${action}" data-id="${esc(app.id)}" aria-pressed="${selectedAction === action}"${selectedAction === action ? ' style="outline:3px solid var(--brand)"' : ''}`;
-  const unavailableMessage = {
-    draft: 'This draft has not been submitted for assessment.',
-    submitted: 'This application has been submitted but is not yet under active review.',
-    need_info: 'A request is with the applicant. Continue the decision after supplementary information is submitted.'
-  }[app.status] || 'A human decision is not available for the current status.';
-  return `<div class="assessment-summary"><div class="score"><span class="n" style="color:${color}">${result.score}</span><span class="sub">/ 100</span></div>
+  const unavailableState = {
+    draft: {
+      title: 'Not yet submitted',
+      body: 'This draft must be submitted before an Officer decision can be recorded.'
+    },
+    submitted: {
+      title: 'Awaiting active review',
+      body: 'This application has been submitted and is waiting to enter the active review stage.'
+    },
+    need_info: {
+      title: 'Waiting for applicant information',
+      body: 'Continue the decision after the requested supplementary information is submitted.'
+    }
+  }[app.status] || {
+    title: 'Decision unavailable',
+    body: 'A human decision is not available for the current status.'
+  };
+  const humanDecisionTitleId = `human-decision-title-${String(app.id ?? 'case').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const decisionContent = locked
+    ? `<div class="note decision-completed${app.status === 'rejected' ? ' bad' : ''}"><b>Completed: ${esc(app.decision)}</b><br>${esc(app.officerNote)}</div>`
+    : canDecide
+      ? `<div class="btnrow decision-options">${button('Approve', 'pick-decision', 'ok', decisionData('Approve'))}
+        ${button('Request information', 'pick-decision', 'warn', decisionData('Request Info'))}${button('Reject', 'pick-decision', 'bad', decisionData('Reject'))}</div>
+        <label class="f"><span>Officer rationale (required)</span><textarea id="officer-note" placeholder="Explain why you accept or adjust the model recommendation"></textarea></label>
+        <p class="muted" id="decision-info">${selectedAction ? `${esc(selectedAction)} selected. Add a rationale to continue.` : 'No action selected.'}</p>
+        ${button('Submit final action', 'commit-decision', 'pri decision-submit', `data-id="${esc(app.id)}" data-eligible="true" disabled`)}`
+      : `<div class="note warn decision-unavailable"><b>${unavailableState.title}</b><p>${unavailableState.body}</p></div>`;
+  return `<div class="decision-workspace">
+    <div class="decision-analysis-panel">
+      <div class="assessment-summary"><div class="score"><span class="n" style="color:${color}">${result.score}</span><span class="sub">/ 100</span></div>
       <div><span class="assessment-band-label">Risk band</span><span class="tag ${result.level === 'Low' ? 't-ok' : result.level === 'High' ? 't-bad' : 't-warn'}">${result.level}</span></div></div>
     <p class="muted model-version">Model ${esc(result.modelVersion)} · Deterministic and reproducible</p><div class="hr"></div>
     <b class="section-label">Primary risk factors (select to inspect evidence)</b>
@@ -715,14 +745,12 @@ function decisionHtml(app, result, decisionState) {
       <label class="f"><span>Down payment (S$)</span><input id="s-down" type="number" value="${n(app.downPayment)}"></label>
       <label class="f"><span>Monthly income override (S$)</span><input id="s-income" type="number" value="${n(app.incomeVerified)}"></label>
       ${button('Recalculate', 'rerun-risk', 'sm', `data-id="${app.id}"`)}<div id="rerun-output" style="margin-top:10px"></div></div></details>
-    <div class="hr thick"></div><div class="human-decision-heading"><div><b class="section-label">Human decision</b><span>Officer-owned outcome</span></div></div>
-    ${locked ? `<div class="note ${app.status === 'rejected' ? 'bad' : ''}" style="margin-top:10px"><b>Completed: ${app.decision}</b><br>${esc(app.officerNote)}</div>` :
-    canDecide ? `<div class="btnrow decision-options">${button('Approve', 'pick-decision', 'ok', decisionData('Approve'))}
-      ${button('Request information', 'pick-decision', 'warn', decisionData('Request Info'))}${button('Reject', 'pick-decision', 'bad', decisionData('Reject'))}</div>
-      <label class="f"><span>Officer rationale (required)</span><textarea id="officer-note" placeholder="Explain why you accept or adjust the model recommendation"></textarea></label>
-      <p class="muted" id="decision-info">${selectedAction ? `${esc(selectedAction)} selected. Add a rationale to continue.` : 'No action selected.'}</p>
-      ${button('Submit final action', 'commit-decision', 'pri decision-submit', `data-id="${esc(app.id)}" data-eligible="true" disabled`)}` :
-    `<div class="note warn decision-unavailable"><b>Decision controls unavailable</b><p>${esc(unavailableMessage)}</p></div>`}`;
+    </div>
+    <section class="human-decision-panel" aria-labelledby="${humanDecisionTitleId}">
+      <div class="human-decision-heading"><b id="${humanDecisionTitleId}" class="section-label">Human decision</b><span>Officer-owned outcome</span></div>
+      ${decisionContent}
+    </section>
+  </div>`;
 }
 
 export function caseView(app, result, allApps, decisionState = null) {

@@ -397,7 +397,7 @@ async function handleAction(button) {
     return;
   }
   if (action === 'new-application') {
-    activeDraft = await api.createApplication();
+    activeDraft = await api.createApplication({ residency: '' });
     activeDraftId = activeDraft.id;
     formStep = 1;
     clearFormValidation();
