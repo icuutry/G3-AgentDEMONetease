@@ -12,8 +12,11 @@ import { createSupplementState } from './supplement-state.js';
 import {
   applicantHomeView, auditView, caseView, formView, homeView, loginView, notFoundView,
   queueView, statusView, supplementView, unauthorizedView
-} from './views.js?v=20260730-ui-final-1';
+} from './views.js?v=20260730-ui-final-2';
 
+const APP_BUILD = '20260730-ui-final-2';
+document.documentElement.dataset.appBuild = APP_BUILD;
+console.info(`AI Car Loan Demo UI build ${APP_BUILD}`);
 const appRoot = document.getElementById('app');
 const toastRegion = document.getElementById('toast-region');
 const headerActions = document.getElementById('header-actions');

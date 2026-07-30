@@ -1,3 +1,7 @@
+param(
+    [switch]$FreshDemo
+)
+
 $repoRoot = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($repoRoot)) {
     $repoRoot = (Get-Location).Path
@@ -8,11 +12,13 @@ $pythonPath = Join-Path $backendDirectory '.venv\Scripts\python.exe'
 $backendMain = Join-Path $backendDirectory 'app\main.py'
 $frontendDirectory = Join-Path $repoRoot 'frontend'
 $frontendIndex = Join-Path $frontendDirectory 'index.html'
+$frontendServer = Join-Path $repoRoot 'scripts\serve_frontend_no_cache.py'
 
 $requiredPaths = @(
     $pythonPath,
     $backendMain,
-    $frontendIndex
+    $frontendIndex,
+    $frontendServer
 )
 
 foreach ($requiredPath in $requiredPaths) {
@@ -188,8 +194,133 @@ function Stop-LauncherProcess {
     }
 }
 
+function Confirm-FreshDemoData {
+    $loginBody = @{
+        role = 'officer'
+        email = 'officer@demo.com'
+        password = 'demo123'
+    } | ConvertTo-Json -Compress
+
+    $login = Invoke-RestMethod `
+        -Method Post `
+        -Uri 'http://127.0.0.1:8000/auth/login' `
+        -ContentType 'application/json' `
+        -Body $loginBody `
+        -TimeoutSec 10
+
+    [string]$accessToken = $login.accessToken
+    if ([string]::IsNullOrWhiteSpace($accessToken)) {
+        throw 'Fresh demo login did not return an access token.'
+    }
+
+    $headers = @{ Authorization = "Bearer $accessToken" }
+    Invoke-RestMethod `
+        -Method Post `
+        -Uri 'http://127.0.0.1:8000/demo/reset' `
+        -Headers $headers `
+        -TimeoutSec 15 | Out-Null
+
+    $response = Invoke-RestMethod `
+        -Method Get `
+        -Uri 'http://127.0.0.1:8000/applications' `
+        -Headers $headers `
+        -TimeoutSec 15
+    $applications = @($response.items)
+
+    $expected = @{
+        'CAR-2026-001' = @('Sarah Lee', 'Nissan Sylphy 1.6', 'approved')
+        'CAR-2026-002' = @('Daniel Lim', 'Honda Civic 1.5 Turbo', 'reviewing')
+        'CAR-2026-003' = @('Marcus Wong', 'Mazda 3 1.5', 'rejected')
+        'CAR-2026-004' = @('Daniel Lim (second application)', 'Honda HR-V 1.5', 'need_info')
+        'CAR-2026-005' = @('Amelia Tan', 'Toyota Corolla Altis 1.6', 'reviewing')
+    }
+
+    if ($applications.Count -ne 5 -or [int]$response.total -ne 5) {
+        throw "Fresh demo validation expected exactly 5 records but received $($applications.Count)."
+    }
+    if (@($applications | Where-Object { $_.id -eq 'CAR-2026-006' }).Count -gt 0) {
+        throw 'Fresh demo validation found unexpected record CAR-2026-006.'
+    }
+
+    foreach ($applicationId in $expected.Keys) {
+        $matches = @($applications | Where-Object { $_.id -eq $applicationId })
+        if ($matches.Count -ne 1) {
+            throw "Fresh demo validation expected one record for $applicationId."
+        }
+        $application = $matches[0]
+        $values = $expected[$applicationId]
+        if (
+            $application.name -ne $values[0] -or
+            $application.carModel -ne $values[1] -or
+            $application.status -ne $values[2]
+        ) {
+            throw "Fresh demo validation failed for $applicationId."
+        }
+    }
+
+    Write-Host 'Fresh demo data verified: 5 current records.' -ForegroundColor Green
+}
+
+function Find-ChromeExecutable {
+    $candidates = @()
+    $chromeCommands = @(Get-Command 'chrome.exe' -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($command in $chromeCommands) {
+        if (-not [string]::IsNullOrWhiteSpace($command.Source)) {
+            $candidates += $command.Source
+        }
+    }
+
+    $programFiles = [Environment]::GetFolderPath('ProgramFiles')
+    $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+    $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+    $candidates += @(
+        (Join-Path $programFiles 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $programFilesX86 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $localAppData 'Google\Chrome\Application\chrome.exe')
+    )
+
+    foreach ($candidate in @($candidates | Select-Object -Unique)) {
+        if (
+            -not [string]::IsNullOrWhiteSpace($candidate) -and
+            (Test-Path -LiteralPath $candidate -PathType Leaf)
+        ) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return $null
+}
+
+function Remove-TemporaryBrowserProfile {
+    param(
+        [string]$ProfilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ProfilePath) -or -not (Test-Path -LiteralPath $ProfilePath)) {
+        return
+    }
+
+    try {
+        [string]$resolvedProfile = (Resolve-Path -LiteralPath $ProfilePath -ErrorAction Stop).Path
+        [string]$resolvedTemp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+        [string]$resolvedRepo = [IO.Path]::GetFullPath($repoRoot).TrimEnd('\') + '\'
+        if (
+            -not $resolvedProfile.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgnoreCase) -or
+            $resolvedProfile.StartsWith($resolvedRepo, [StringComparison]::OrdinalIgnoreCase)
+        ) {
+            Write-Warning "Refusing to remove unexpected browser profile path: $resolvedProfile"
+            return
+        }
+        Remove-Item -LiteralPath $resolvedProfile -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Could not remove temporary Chrome profile '$ProfilePath': $($_.Exception.Message)"
+    }
+}
+
 $backendProcess = $null
 $frontendProcess = $null
+$browserProcess = $null
+$browserProfileDirectory = $null
 $exitCode = 0
 
 try {
@@ -220,18 +351,22 @@ try {
     }
     Write-Host 'Backend is ready.'
 
+    if ($FreshDemo) {
+        Write-Host 'Resetting and validating fresh demo data...'
+        Confirm-FreshDemoData
+    }
+
     Write-Host 'Starting frontend...'
-    $quotedFrontendDirectory = '"' + $frontendDirectory.Replace('"', '\"') + '"'
     $frontendProcess = Start-Process `
         -FilePath $pythonExe `
         -ArgumentList @(
-            '-m',
-            'http.server',
-            '5510',
+            $frontendServer,
+            '--directory',
+            $frontendDirectory,
             '--bind',
             '127.0.0.1',
-            '--directory',
-            $quotedFrontendDirectory
+            '--port',
+            '5510'
         ) `
         -WorkingDirectory $repoRoot `
         -WindowStyle Hidden `
@@ -252,30 +387,49 @@ try {
         'yyyyMMddHHmmssfff',
         [Globalization.CultureInfo]::InvariantCulture
     )
-    [string]$demoUrl = "http://127.0.0.1:5510/?v=$cacheBuster"
+    [string]$demoUrl = "http://127.0.0.1:5510/?build=20260730-ui-final-2&t=$cacheBuster#/login/officer"
     Write-Host 'Opening demo...'
-    $chromeCommands = @(Get-Command 'chrome.exe' -CommandType Application -ErrorAction SilentlyContinue)
-    if ($chromeCommands.Count -gt 0) {
-        [string]$chromeExe = $chromeCommands[0].Source
-        if ([string]::IsNullOrWhiteSpace($chromeExe)) {
-            throw 'Chrome was found but its executable path could not be resolved.'
-        }
-        Start-Process -FilePath $chromeExe -ArgumentList @($demoUrl)
+    [string]$chromeExe = Find-ChromeExecutable
+    if (-not [string]::IsNullOrWhiteSpace($chromeExe)) {
+        $browserProfileDirectory = Join-Path `
+            ([IO.Path]::GetTempPath()) `
+            "ai-car-loan-demo-chrome-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $browserProfileDirectory -ErrorAction Stop | Out-Null
+        $browserProcess = Start-Process `
+            -FilePath $chromeExe `
+            -ArgumentList @(
+                "--user-data-dir=$browserProfileDirectory",
+                '--new-window',
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-application-cache',
+                '--disable-background-networking',
+                $demoUrl
+            ) `
+            -PassThru
+        Write-Host "Browser executable: $chromeExe"
+        Write-Host "Temporary profile: $browserProfileDirectory"
     }
     else {
+        Write-Warning 'Chrome was not found. The default browser will open without a guaranteed isolated profile.'
         Start-Process -FilePath $demoUrl
+        Write-Host 'Browser executable: system default'
+        Write-Host 'Temporary profile: unavailable'
     }
+    Write-Host "Opened URL: $demoUrl"
 
     Write-Host 'Demo is running.'
-    Read-Host 'Press Enter to stop both servers' | Out-Null
+    Read-Host 'Press Enter to stop the browser and both servers' | Out-Null
 }
 catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     $exitCode = 1
 }
 finally {
+    Stop-LauncherProcess -Process $browserProcess
     Stop-LauncherProcess -Process $frontendProcess
     Stop-LauncherProcess -Process $backendProcess
+    Remove-TemporaryBrowserProfile -ProfilePath $browserProfileDirectory
 }
 
 if ($exitCode -ne 0) {
