@@ -679,11 +679,15 @@ function checksHtml(app, result, allApps) {
       ${result.rules.length ? result.rules.map(rule => `<div class="chk officer-rule-row"><span>${esc(readableRule(rule))}</span></div>`).join('') : '<div class="muted">No scoring rules were triggered.</div>'}</div>`;
 }
 
-function decisionHtml(app, result) {
+function decisionHtml(app, result, decisionState) {
   const max = Math.max(...result.factors.map(item => item.score), 1);
   const color = result.level === 'High' ? 'var(--bad)' : result.level === 'Medium' ? 'var(--warn)' : 'var(--ok)';
   const locked = ['approved', 'rejected'].includes(app.status);
   const canDecide = app.status === 'reviewing';
+  const selectedAction = decisionState?.applicationId === String(app.id)
+    ? decisionState.action
+    : null;
+  const decisionData = action => `data-decision="${action}" data-id="${esc(app.id)}" aria-pressed="${selectedAction === action}"${selectedAction === action ? ' style="outline:3px solid var(--brand)"' : ''}`;
   const unavailableMessage = {
     draft: 'This draft has not been submitted for assessment.',
     submitted: 'This application has been submitted but is not yet under active review.',
@@ -703,15 +707,15 @@ function decisionHtml(app, result) {
       ${button('Recalculate', 'rerun-risk', 'sm', `data-id="${app.id}"`)}<div id="rerun-output" style="margin-top:10px"></div></div></details>
     <div class="hr thick"></div><div class="human-decision-heading"><div><b class="section-label">Human decision</b><span>Officer-owned outcome</span></div></div>
     ${locked ? `<div class="note ${app.status === 'rejected' ? 'bad' : ''}" style="margin-top:10px"><b>Completed: ${app.decision}</b><br>${esc(app.officerNote)}</div>` :
-    canDecide ? `<div class="btnrow decision-options">${button('Approve', 'pick-decision', 'ok', 'data-decision="Approve"')}
-      ${button('Request information', 'pick-decision', 'warn', 'data-decision="Request Info"')}${button('Reject', 'pick-decision', 'bad', 'data-decision="Reject"')}</div>
+    canDecide ? `<div class="btnrow decision-options">${button('Approve', 'pick-decision', 'ok', decisionData('Approve'))}
+      ${button('Request information', 'pick-decision', 'warn', decisionData('Request Info'))}${button('Reject', 'pick-decision', 'bad', decisionData('Reject'))}</div>
       <label class="f"><span>Officer rationale (required)</span><textarea id="officer-note" placeholder="Explain why you accept or adjust the model recommendation"></textarea></label>
-      <p class="muted" id="decision-info">No action selected.</p>
-      ${button('Submit final action', 'commit-decision', 'pri decision-submit', `data-id="${app.id}" disabled`)}` :
+      <p class="muted" id="decision-info">${selectedAction ? `${esc(selectedAction)} selected. Add a rationale to continue.` : 'No action selected.'}</p>
+      ${button('Submit final action', 'commit-decision', 'pri decision-submit', `data-id="${esc(app.id)}" data-eligible="true" disabled`)}` :
     `<div class="note warn decision-unavailable"><b>Decision controls unavailable</b><p>${esc(unavailableMessage)}</p></div>`}`;
 }
 
-export function caseView(app, result, allApps) {
+export function caseView(app, result, allApps, decisionState = null) {
   return `<section class="officer-page officer-case-page" aria-labelledby="case-review-title">
     <div class="officer-case-nav">${button('Back to queue', 'navigate', 'officer-back', 'data-route="#/queue"')}
       <div>${button('Audit records', 'navigate', 'officer-secondary', 'data-route="#/audit"')}</div></div>
@@ -721,7 +725,7 @@ export function caseView(app, result, allApps) {
     <div class="cols officer-case-cols">
       <section class="col officer-col officer-profile-col"><div class="colhd"><span class="col-step">1</span><div><b>Applicant profile</b><span>Facts, sources, and assessment use</span></div></div><div class="colbd">${profileHtml(app)}</div></section>
       <section class="col officer-col officer-checks-col"><div class="colhd"><span class="col-step">2</span><div><b>Automated checks</b><span>Completeness, consistency, and rules</span></div></div><div class="colbd">${checksHtml(app, result, allApps)}</div></section>
-      <section class="col officer-col officer-decision-col"><div class="colhd"><span class="col-step">3</span><div><b>Assessment &amp; decision</b><span>Model advice separated from human judgment</span></div></div><div class="colbd">${decisionHtml(app, result)}</div></section>
+      <section class="col officer-col officer-decision-col"><div class="colhd"><span class="col-step">3</span><div><b>Assessment &amp; decision</b><span>Model advice separated from human judgment</span></div></div><div class="colbd">${decisionHtml(app, result, decisionState)}</div></section>
     </div>
   </section>`;
 }

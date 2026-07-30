@@ -1,5 +1,6 @@
 import { PRESETS, RULESET_VERSION } from './demo-data.js';
 import * as api from './api.js';
+import { createDecisionState } from './decision-state.js';
 import {
   evaluate, money, normalizeRequiredTextValues, pct, validateFormAction
 } from './risk-engine.js';
@@ -18,7 +19,7 @@ let formStep = 1;
 let activeDraftId = null;
 let activeDraft = null;
 let uploads = [];
-let selectedDecision = null;
+const decisionState = createDecisionState();
 let selectedMockPersona = 'low';
 let queueFilters = { kw: '', status: '', level: '' };
 let applicationsCache = [];
@@ -33,7 +34,7 @@ function clearTemporaryState() {
   activeDraftId = null;
   activeDraft = null;
   uploads = [];
-  selectedDecision = null;
+  decisionState.clear();
   selectedMockPersona = 'low';
   queueFilters = { kw: '', status: '', level: '' };
   applicationsCache = [];
@@ -99,6 +100,8 @@ function updateHeaderVisibility(user) {
 }
 
 async function navigate(route) {
+  const [page, id] = routeParts(route);
+  decisionState.reconcileRoute(page, id);
   if (location.hash !== route) {
     suppressNextHashRender = true;
     location.hash = route;
@@ -106,8 +109,8 @@ async function navigate(route) {
   await renderSafely();
 }
 
-function routeParts() {
-  return (location.hash || '#/').slice(2).split('/').filter(Boolean);
+function routeParts(route = location.hash || '#/') {
+  return route.slice(2).split('/').filter(Boolean);
 }
 
 function requireRole(role) {
@@ -164,6 +167,7 @@ async function getApplicationOrNull(applicationId) {
 
 async function render() {
   const [page = '', id] = routeParts();
+  decisionState.reconcileRoute(page, id);
   document.getElementById('who').textContent = currentUser
     ? `Signed in as ${currentUser.displayName || (currentUser.role === 'applicant' ? 'Applicant' : 'Loan Officer')}`
     : 'Not signed in';
@@ -240,6 +244,7 @@ async function render() {
     }
   } else if (page === 'case') {
     if (!requireRole('officer')) {
+      decisionState.clear();
       appRoot.innerHTML = unauthorizedView();
     } else {
       const [application, applications] = await Promise.all([
@@ -247,14 +252,21 @@ async function render() {
         api.listApplications()
       ]);
       if (!application) {
+        decisionState.clear();
         appRoot.innerHTML = notFoundView();
         return;
       }
+      if (application.status !== 'reviewing') decisionState.clear();
       applicationsCache = applications;
       const assessment = application.riskAssessment
         || await api.evaluateApplication(application.id, {}, false);
       assessmentCache.set(application.id, assessment);
-      appRoot.innerHTML = caseView(application, assessment, applications);
+      appRoot.innerHTML = caseView(
+        application,
+        assessment,
+        applications,
+        decisionState.get()
+      );
     }
   } else if (page === 'audit') {
     if (!requireRole('officer')) {
@@ -504,39 +516,88 @@ async function handleAction(button) {
     return;
   }
   if (action === 'pick-decision') {
-    selectedDecision = button.dataset.decision;
-    document.querySelectorAll('[data-action="pick-decision"]').forEach(element => {
-      element.style.outline = '';
-    });
-    button.style.outline = '3px solid var(--brand)';
-    document.getElementById('decision-info').textContent = `${selectedDecision} selected. Add a rationale to continue.`;
+    const applicationId = button.dataset.id;
+    const decision = button.dataset.decision;
+    if (!decisionState.select(applicationId, decision)) {
+      decisionState.clear();
+      updateDecisionSelectionUi(applicationId, null);
+      updateDecisionButton();
+      return showMessage('Select a valid decision for the current application.', 'error');
+    }
+    updateDecisionSelectionUi(applicationId, decision);
     updateDecisionButton();
     return;
   }
   if (action === 'commit-decision') {
-    const note = document.getElementById('officer-note').value.trim();
-    if (!selectedDecision || !note) return showMessage('Select a decision and enter a nonblank rationale.');
+    const noteControl = appRoot.querySelector('#officer-note');
+    const note = noteControl?.value.trim() || '';
+    const applicationId = button.dataset.id;
+    const validation = decisionState.validate({
+      applicationId,
+      note,
+      eligible: button.dataset.eligible === 'true'
+    });
+    if (!validation.valid) {
+      if (['application_mismatch', 'unknown_action'].includes(validation.reason)) {
+        decisionState.clear();
+        updateDecisionSelectionUi(applicationId, null);
+      }
+      updateDecisionButton();
+      return showMessage(
+        validation.reason === 'application_mismatch'
+          ? 'The selected decision belongs to a different application. Select an action for this case.'
+          : validation.reason === 'ineligible_status'
+            ? 'This application is no longer eligible for a decision.'
+            : 'Select a decision and enter a nonblank rationale.',
+        'error'
+      );
+    }
     let application;
-    if (selectedDecision === 'Approve') {
-      application = await api.approveApplication(button.dataset.id, { note });
-    } else if (selectedDecision === 'Reject') {
-      application = await api.rejectApplication(button.dataset.id, { note });
+    if (validation.action === 'Approve') {
+      application = await api.approveApplication(applicationId, { note });
+    } else if (validation.action === 'Reject') {
+      application = await api.rejectApplication(applicationId, { note });
+    } else if (validation.action === 'Request Info') {
+      application = await api.requestSupplement(applicationId, { note });
     } else {
-      application = await api.requestSupplement(button.dataset.id, { note });
+      decisionState.clear();
+      updateDecisionButton();
+      return showMessage('Select a valid decision for the current application.', 'error');
     }
     const index = applicationsCache.findIndex(item => item.id === application.id);
     if (index >= 0) applicationsCache[index] = application;
-    selectedDecision = null;
+    decisionState.markSubmissionSucceeded(applicationId);
     showMessage('The action was recorded, the applicant status was updated, and an audit record was created.');
     return navigate('#/queue');
   }
   if (action === 'export-audit') return exportAudit();
 }
 
+function updateDecisionSelectionUi(applicationId, action) {
+  appRoot.querySelectorAll('[data-action="pick-decision"]').forEach(element => {
+    if (element.dataset.id !== applicationId) return;
+    const selected = element.dataset.decision === action;
+    element.style.outline = selected ? '3px solid var(--brand)' : '';
+    element.setAttribute('aria-pressed', String(selected));
+  });
+  const info = appRoot.querySelector('#decision-info');
+  if (info) {
+    info.textContent = action
+      ? `${action} selected. Add a rationale to continue.`
+      : 'No action selected.';
+  }
+}
+
 function updateDecisionButton() {
-  const note = document.getElementById('officer-note');
-  const submit = document.querySelector('[data-action="commit-decision"]');
-  if (submit) submit.disabled = !(selectedDecision && note?.value.trim());
+  const note = appRoot.querySelector('#officer-note');
+  const submit = appRoot.querySelector('[data-action="commit-decision"]');
+  if (!submit) return;
+  const validation = decisionState.validate({
+    applicationId: submit.dataset.id,
+    note: note?.value,
+    eligible: submit.dataset.eligible === 'true'
+  });
+  submit.disabled = !validation.valid;
 }
 
 function refreshLtvCheck(application) {
