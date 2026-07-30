@@ -126,8 +126,6 @@ Authenticated requests use:
 Authorization: Bearer demo-applicant-token
 ```
 
-`X-Demo-Role` remains available for local compatibility only. It must not be used as production authentication.
-
 ## Status workflow
 
 The stable state transitions are:
@@ -439,7 +437,7 @@ The suite covers:
 The current version is for teaching and demonstration. Before production use:
 
 - replace SQLite with managed PostgreSQL;
-- replace demo tokens and `X-Demo-Role` with production authentication;
+- replace demo tokens with production authentication;
 - configure secrets and exact CORS origins;
 - disable or strictly protect `/demo/reset`;
 - use real object storage and malware scanning for uploaded files;

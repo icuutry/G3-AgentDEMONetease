@@ -80,24 +80,6 @@
             "HTTPBearer": []
           }
         ],
-        "parameters": [
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -105,16 +87,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -132,24 +104,6 @@
         "security": [
           {
             "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "requestBody": {
@@ -251,22 +205,6 @@
               ],
               "title": "Search"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "responses": {
@@ -314,22 +252,6 @@
               "type": "string",
               "title": "Application Id"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "responses": {
@@ -374,22 +296,6 @@
             "schema": {
               "type": "string",
               "title": "Application Id"
-            }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
             }
           }
         ],
@@ -448,22 +354,6 @@
               "type": "string",
               "title": "Application Id"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "responses": {
@@ -510,22 +400,6 @@
             "schema": {
               "type": "string",
               "title": "Application Id"
-            }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
             }
           }
         ],
@@ -584,22 +458,6 @@
               "type": "string",
               "title": "Application Id"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "responses": {
@@ -646,22 +504,6 @@
             "schema": {
               "type": "string",
               "title": "Application Id"
-            }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
             }
           }
         ],
@@ -719,22 +561,6 @@
             "schema": {
               "type": "string",
               "title": "Application Id"
-            }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
             }
           }
         ],
@@ -800,22 +626,6 @@
               ],
               "title": "Applicationid"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "responses": {
@@ -854,24 +664,6 @@
             "HTTPBearer": []
           }
         ],
-        "parameters": [
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -879,16 +671,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MockPersonaList"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -916,22 +698,6 @@
             "schema": {
               "type": "string",
               "title": "Application Id"
-            }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
             }
           }
         ],
@@ -990,22 +756,6 @@
               "type": "string",
               "title": "Application Id"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "requestBody": {
@@ -1063,22 +813,6 @@
               "type": "string",
               "title": "Application Id"
             }
-          },
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
           }
         ],
         "requestBody": {
@@ -1127,24 +861,6 @@
             "HTTPBearer": []
           }
         ],
-        "parameters": [
-          {
-            "name": "X-Demo-Role",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Demo-Role"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1156,16 +872,6 @@
                     "type": "string"
                   },
                   "title": "Response Demo Reset Demo Reset Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }

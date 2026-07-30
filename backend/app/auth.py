@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .schemas import LoginRequest, LoginResponse, UserOut
@@ -68,17 +68,12 @@ def login(payload: LoginRequest) -> LoginResponse:
 
 def current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
-    x_demo_role: str | None = Header(default=None, alias="X-Demo-Role"),
 ) -> DemoAccount:
     token = credentials.credentials if credentials else None
     if token:
         account = next((item for item in ACCOUNTS if item.token == token), None)
         if account:
             return account
-
-    # This header keeps local HTML integration simple while still enforcing roles.
-    if x_demo_role in {"applicant", "officer"}:
-        return next(item for item in ACCOUNTS if item.role == x_demo_role)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

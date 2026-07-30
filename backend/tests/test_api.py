@@ -73,6 +73,178 @@ def auth_header(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
+def assert_unauthenticated(response) -> None:
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "not_authenticated"
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/auth/me"),
+        ("POST", "/applications"),
+        ("POST", "/demo/reset"),
+    ],
+)
+def test_protected_endpoints_require_bearer_token(
+    client: TestClient, method: str, path: str
+) -> None:
+    assert_unauthenticated(client.request(method, path))
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "role"),
+    [
+        ("GET", "/auth/me", "officer"),
+        ("GET", "/auth/me", "applicant"),
+        ("POST", "/demo/reset", "officer"),
+        ("POST", "/applications", "applicant"),
+    ],
+)
+def test_demo_role_header_cannot_authenticate(
+    client: TestClient, method: str, path: str, role: str
+) -> None:
+    assert_unauthenticated(
+        client.request(method, path, headers={"X-Demo-Role": role})
+    )
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Authorization": "Bearer unknown-token"},
+        {
+            "Authorization": "Bearer invalid-token",
+            "X-Demo-Role": "officer",
+        },
+        {"Authorization": "Bearer "},
+        {"Authorization": "malformed"},
+        {"Authorization": "Basic ZGVtbzpkZW1v"},
+    ],
+)
+def test_invalid_authorization_cannot_be_repaired_by_role_header(
+    client: TestClient, headers: dict[str, str]
+) -> None:
+    assert_unauthenticated(client.get("/auth/me", headers=headers))
+
+
+@pytest.mark.parametrize(
+    ("access_token", "expected_role"),
+    [
+        ("demo-applicant-token", "applicant"),
+        ("demo-officer-token", "officer"),
+    ],
+)
+def test_valid_bearer_authenticates_expected_account(
+    client: TestClient, access_token: str, expected_role: str
+) -> None:
+    response = client.get("/auth/me", headers=auth_header(access_token))
+    assert response.status_code == 200
+    assert response.json()["role"] == expected_role
+
+
+@pytest.mark.parametrize(
+    ("access_token", "conflicting_role", "expected_role"),
+    [
+        ("demo-applicant-token", "officer", "applicant"),
+        ("demo-officer-token", "applicant", "officer"),
+    ],
+)
+def test_valid_bearer_role_ignores_conflicting_demo_role_header(
+    client: TestClient,
+    access_token: str,
+    conflicting_role: str,
+    expected_role: str,
+) -> None:
+    response = client.get(
+        "/auth/me",
+        headers={
+            **auth_header(access_token),
+            "X-Demo-Role": conflicting_role,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["role"] == expected_role
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_token", "expected_role"),
+    [
+        (
+            {
+                "role": "applicant",
+                "email": "applicant@demo.com",
+                "password": "demo123",
+            },
+            "demo-applicant-token",
+            "applicant",
+        ),
+        (
+            {
+                "role": "officer",
+                "email": "officer@demo.com",
+                "password": "demo123",
+            },
+            "demo-officer-token",
+            "officer",
+        ),
+        (
+            {
+                "role": "officer",
+                "staffId": "Officer01",
+                "password": "demo123",
+            },
+            "demo-officer-token",
+            "officer",
+        ),
+    ],
+)
+def test_demo_login_identities_remain_valid(
+    client: TestClient,
+    payload: dict[str, str],
+    expected_token: str,
+    expected_role: str,
+) -> None:
+    response = client.post("/auth/login", json=payload)
+    assert response.status_code == 200
+    assert response.json()["accessToken"] == expected_token
+    assert response.json()["user"]["role"] == expected_role
+
+
+def test_invalid_login_password_remains_unauthorized(client: TestClient) -> None:
+    response = client.post(
+        "/auth/login",
+        json={
+            "role": "applicant",
+            "email": "applicant@demo.com",
+            "password": "wrong-password",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "invalid_credentials"
+
+
+def test_authenticated_wrong_roles_remain_forbidden(client: TestClient) -> None:
+    applicant_headers = auth_header("demo-applicant-token")
+    officer_headers = auth_header("demo-officer-token")
+
+    officer_endpoint = client.post("/demo/reset", headers=applicant_headers)
+    applicant_endpoint = client.post(
+        "/applications",
+        headers=officer_headers,
+    )
+    officer_decision = client.post(
+        "/applications/APP-NOT-USED/decision",
+        json={"decision": "approve", "note": "Must remain forbidden."},
+        headers=applicant_headers,
+    )
+
+    assert officer_endpoint.status_code == 403
+    assert applicant_endpoint.status_code == 403
+    assert officer_decision.status_code == 403
+
+
 def test_complete_submit_review_supplement_approve_flow(client: TestClient) -> None:
     applicant_token = token(client, "applicant")
     officer_token = token(client, "officer")
