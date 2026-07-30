@@ -1,6 +1,7 @@
 import { PRESETS, RULESET_VERSION } from './demo-data.js';
 import * as api from './api.js';
 import { createDecisionState } from './decision-state.js';
+import { serializeCsv } from './csv.js';
 import {
   evaluate, money, normalizeRequiredTextValues, pct, validateFormAction
 } from './risk-engine.js';
@@ -625,10 +626,9 @@ function refreshLtvCheck(application) {
 async function exportAudit() {
   const logs = await api.getAuditLogs();
   auditCache = logs;
-  const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
   const rows = [['Time', 'Application ID', 'Action', 'Actor', 'Model version', 'Note'],
     ...logs.map(item => [new Date(item.ts).toISOString(), item.appId, item.action, item.actor, item.modelVersion, item.note])];
-  const csv = rows.map(row => row.map(quote).join(',')).join('\n');
+  const csv = serializeCsv(rows);
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
