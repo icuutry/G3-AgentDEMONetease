@@ -6,9 +6,10 @@ import {
 import {
   applicantHomeView, auditView, caseView, formView, homeView, loginView, notFoundView,
   queueView, statusView, supplementView, unauthorizedView
-} from './views.js';
+} from './views.js?v=20260730-ui-final-1';
 
 const appRoot = document.getElementById('app');
+const toastRegion = document.getElementById('toast-region');
 const headerActions = document.getElementById('header-actions');
 const switchPortalButton = document.getElementById('switch-portal');
 const resetDemoButton = document.getElementById('reset-demo');
@@ -113,8 +114,27 @@ function requireRole(role) {
   return currentUser?.role === role;
 }
 
-function showMessage(message) {
-  window.alert(message);
+function showMessage(message, tone = 'info') {
+  if (!toastRegion) {
+    window.alert(message);
+    return;
+  }
+  toastRegion.replaceChildren();
+  const toast = document.createElement('div');
+  toast.className = `toast ${tone === 'error' ? 'toast-error' : ''}`;
+  toast.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+  const copy = document.createElement('span');
+  copy.className = 'toast-message';
+  copy.textContent = message;
+  const close = document.createElement('button');
+  close.className = 'toast-close';
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Dismiss notification');
+  close.textContent = '×';
+  close.addEventListener('click', () => toast.remove());
+  toast.append(copy, close);
+  toastRegion.append(toast);
+  window.setTimeout(() => toast.remove(), 5200);
 }
 
 async function handleError(error) {
@@ -123,7 +143,7 @@ async function handleError(error) {
     : error instanceof Error && error.message
       ? error.message
       : 'Something went wrong while contacting the API.';
-  showMessage(message || 'Unable to complete the request.');
+  showMessage(message || 'Unable to complete the request.', 'error');
 
   if (error instanceof api.ApiError && error.status === 401) {
     api.logout();

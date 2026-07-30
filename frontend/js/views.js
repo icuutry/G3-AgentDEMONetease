@@ -109,20 +109,35 @@ export function homeView() {
 export function loginView(role) {
   const applicant = role === 'applicant';
   const account = applicant ? 'applicant@demo.com' : 'officer@demo.com';
-  return `<div class="card" style="max-width:520px;margin:50px auto">
-    <p class="eyebrow">${applicant ? 'Applicant portal' : 'Loan officer portal'}</p>
-    <h1>${applicant ? 'Applicant sign in' : 'Officer sign in'}</h1>
-    <p class="sub">Demo account: <span class="mono">${account}</span> · Password: <span class="mono">demo123</span>.</p>
-    <form id="login-form" data-role="${role}">
-      ${field({ username: '' }, 'username', 'Demo account')}
-      ${field({ password: '' }, 'password', 'Password', 'password')}
-      <div class="btnrow">
-        <button class="btn pri" type="submit">Sign in</button>
-        ${button('Fill demo account', 'fill-login', '', `data-account="${account}"`)}
-        ${button('Back', 'navigate', '', 'data-route="#/"')}
+  const portal = applicant ? 'Applicant portal' : 'Loan officer portal';
+  const description = applicant
+    ? 'Create an application, retrieve simulated records, and follow its status.'
+    : 'Review applications, inspect risk evidence, and record accountable decisions.';
+  return `<section class="login-page login-${role}" aria-labelledby="login-title">
+    <div class="login-context">
+      <div class="login-role-mark" aria-hidden="true"><span></span></div>
+      <p class="eyebrow">${portal.toUpperCase()}</p>
+      <h1 id="login-title">${applicant ? 'Applicant sign in' : 'Officer sign in'}</h1>
+      <p>${description}</p>
+      <div class="login-assurance"><b>Educational prototype</b><span>All accounts and records use synthetic demonstration data.</span></div>
+    </div>
+    <div class="login-card">
+      <div class="login-card-heading"><h2>Access the demo</h2><p>Use the provided credentials or fill them automatically.</p></div>
+      <div class="demo-credentials" aria-label="Demo credentials">
+        <div><span>Demo account</span><b class="mono">${account}</b></div>
+        <div><span>Password</span><b class="mono">demo123</b></div>
       </div>
-    </form>
-  </div>`;
+      <form id="login-form" data-role="${role}">
+        ${field({ username: '' }, 'username', applicant ? 'Email address' : 'Email or staff ID')}
+        ${field({ password: '' }, 'password', 'Password', 'password')}
+        <button class="btn pri login-submit" type="submit">Sign in</button>
+        <div class="login-secondary-actions">
+          ${button('Fill demo account', 'fill-login', '', `data-account="${account}"`)}
+          ${button('Back to portal selection', 'navigate', '', 'data-route="#/"')}
+        </div>
+      </form>
+    </div>
+  </section>`;
 }
 
 export function applicantHomeView(apps) {
@@ -491,14 +506,78 @@ export function statusView(app, logs) {
 }
 
 export function supplementView(app, uploads = []) {
-  return `<div class="card" style="max-width:760px;margin:20px auto"><h1>Provide additional information</h1>
-    <p class="mono sub">${app.id}</p><div class="note warn"><b>Officer request</b><br>${esc(app.needInfoReason)}</div>
-    <form id="supplement-form" data-id="${app.id}">
-      <label class="f"><span>Applicant note</span><textarea name="supplementNote" placeholder="Explain the documents provided">${esc(app.supplementNote)}</textarea></label>
-      <div class="fgroup"><b>Simulated uploads</b><div id="upload-list">${uploads.length ? uploads.map(name => `<div class="chk"><span>${esc(name)}</span><span class="tag t-ok">Ready</span></div>`).join('') : '<p class="muted">No files added yet.</p>'}</div></div>
-      <div class="btnrow">${button('Add simulated file', 'mock-upload')}${button('Submit information', 'submit-supplement', 'pri')}${button('Back', 'navigate', '', `data-route="#/status/${app.id}"`)}</div>
-    </form></div>`;
+  const files = uploads.map((file, index) => {
+    const name = typeof file === 'string' ? file : file?.name || `document_${index + 1}.pdf`;
+    return `<li><span class="upload-file-mark" aria-hidden="true"></span><div><b>${esc(name)}</b><span>Simulated PDF document</span></div><span class="tag t-ok">Ready</span></li>`;
+  }).join('');
+  return `<section class="supplement-page" aria-labelledby="supplement-title">
+    <div class="supplement-nav">${button('Back to application status', 'navigate', 'supplement-back', `data-route="#/status/${app.id}"`)}</div>
+    <header class="supplement-header"><div><p class="eyebrow">ACTION REQUIRED</p><h1 id="supplement-title">Provide additional information</h1>
+      <p><span class="mono">${esc(app.id)}</span> · Add the requested evidence so review can continue.</p></div>${tag(app.status)}</header>
+    <section class="supplement-request" aria-labelledby="officer-request-title">
+      <span class="supplement-request-mark" aria-hidden="true">!</span><div><p class="eyebrow">OFFICER REQUEST</p>
+        <h2 id="officer-request-title">Information needed</h2><p>${esc(app.needInfoReason || 'Please provide the requested supporting information.')}</p></div>
+    </section>
+    <form class="supplement-form" id="supplement-form" data-id="${app.id}">
+      <section class="supplement-card">
+        <div class="supplement-section-heading"><span class="supplement-step">1</span><div><h2>Add a note</h2><p>Briefly explain what you are providing.</p></div></div>
+        <label class="f supplement-note"><span>Applicant note <small>Optional</small></span>
+          <textarea name="supplementNote" placeholder="For example: Attached are my bank statements for the requested period.">${esc(app.supplementNote)}</textarea></label>
+      </section>
+      <section class="supplement-card">
+        <div class="supplement-section-heading"><span class="supplement-step">2</span><div><h2>Add supporting documents</h2><p>Files are simulated in this educational prototype.</p></div></div>
+        <div id="upload-list">${files ? `<ul class="upload-list">${files}</ul>` : `<div class="upload-empty"><span class="upload-empty-mark" aria-hidden="true"></span><b>No files added yet</b><p>Add at least one simulated document before submitting.</p></div>`}</div>
+        ${button('Add simulated file', 'mock-upload', 'supplement-add')}
+      </section>
+      <div class="supplement-submit-bar"><div><b>Ready to send?</b><span>The case will return to officer review.</span></div>
+        ${button('Submit information', 'submit-supplement', 'pri supplement-submit', files ? '' : 'disabled aria-disabled="true"')}</div>
+    </form>
+    <p class="supplement-prototype-note">Prototype note: document content is not uploaded or processed; only synthetic file metadata is recorded.</p>
+  </section>`;
 }
+
+const OFFICER_ACTION_LABELS = {
+  draft: 'View draft',
+  submitted: 'Open case',
+  reviewing: 'Continue review',
+  need_info: 'View request',
+  approved: 'View decision',
+  rejected: 'View decision'
+};
+
+const RISK_TEXT = {
+  income_consistency: 'Income consistency',
+  debt_service_ratio: 'Debt service burden',
+  employment_stability: 'Employment stability',
+  vehicle_age_and_residual_value: 'Vehicle age and residual value',
+  duplicate_application: 'Possible duplicate application',
+  payment_history: 'Payment history',
+  down_payment_ratio: 'Down payment strength',
+  verify_undeclared_instalments_or_guarantees: 'Confirm any undeclared instalments or guarantees',
+  request_three_month_bank_statements: 'Request the latest three months of bank statements',
+  verify_employment_and_probation_status: 'Confirm employment and probation status',
+  verify_duplicate_application: 'Confirm whether the related application is a duplicate'
+};
+
+const readableRiskText = value => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '—';
+  if (RISK_TEXT[raw]) return RISK_TEXT[raw];
+  const cleaned = raw
+    .replace(/^verify_duplicate_application:/, 'Confirm related application ')
+    .replaceAll('_', ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+};
+
+const readableRule = value => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '—';
+  const [group, detail] = raw.split(':');
+  if (!detail) return readableRiskText(raw);
+  return `${group.toUpperCase()} · ${readableRiskText(detail)}`;
+};
 
 export function queueView(apps, query) {
   const assessed = apps.map(app => ({ app, result: query.assessments[app.id] })).filter(({ app, result }) => {
@@ -507,22 +586,45 @@ export function queueView(apps, query) {
       && (!query.status || app.status === query.status) && (!query.level || result.level === query.level);
   });
   const pending = apps.filter(app => ['submitted', 'reviewing', 'need_info'].includes(app.status)).length;
-  return `<div class="statrow"><div class="stat"><div class="n">${apps.length}</div><div class="l">All cases</div></div>
-    <div class="stat"><div class="n">${pending}</div><div class="l">Open cases</div></div>
-    <div class="stat"><div class="n">${apps.filter(app => app.status === 'approved').length}</div><div class="l">Approved</div></div>
-    <div class="stat"><div class="n">${apps.filter(app => app.status === 'rejected').length}</div><div class="l">Rejected</div></div></div>
-    <div style="display:flex;align-items:center;gap:14px;margin:18px 0"><div><h1>Officer queue</h1><p class="sub">Prioritized application review workspace</p></div>
-      <span style="flex:1"></span>${button('Audit records', 'navigate', '', 'data-route="#/audit"')}</div>
-    <div class="card"><div class="btnrow" style="margin-bottom:16px">
-      <input id="queue-keyword" style="flex:2;min-width:200px" placeholder="Search application ID or applicant" value="${esc(query.kw)}">
-      <select id="queue-status" style="flex:1"><option value="">All statuses</option>${Object.entries(STATUS).map(([key, value]) => `<option value="${key}" ${query.status === key ? 'selected' : ''}>${value.label}</option>`).join('')}</select>
-      <select id="queue-level" style="flex:1"><option value="">All risk bands</option>${['Low', 'Medium', 'High'].map(level => `<option ${query.level === level ? 'selected' : ''}>${level}</option>`).join('')}</select>
-      ${button('Apply filters', 'filter-queue')}</div>
-      <table><thead><tr><th>Application</th><th>Applicant</th><th>Loan</th><th>Status</th><th>Risk</th><th>Score</th><th>Action</th></tr></thead>
-      <tbody>${assessed.map(({ app, result }) => `<tr><td class="mono">${app.id}</td><td>${esc(app.name)}</td><td class="mono">${money(app.loanAmount)}</td>
-        <td>${tag(app.status)}</td><td><span class="tag ${result.level === 'Low' ? 't-ok' : result.level === 'High' ? 't-bad' : 't-warn'}">${result.level}</span></td>
-        <td class="mono">${result.score}</td><td>${button('Review', 'navigate', 'sm pri', `data-route="#/case/${app.id}"`)}</td></tr>`).join('') || '<tr><td colspan="7">No matching cases.</td></tr>'}</tbody></table>
-    </div>`;
+  const activeFilters = [query.kw, query.status, query.level].filter(Boolean).length;
+  const rows = assessed.map(({ app, result }) => {
+    const riskClass = result.level === 'Low' ? 't-ok' : result.level === 'High' ? 't-bad' : 't-warn';
+    const priorityClass = ['submitted', 'reviewing'].includes(app.status) ? 'queue-row-active' : '';
+    return `<tr class="${priorityClass}">
+      <td data-label="Application"><b class="mono queue-id">${app.id}</b></td>
+      <td data-label="Applicant"><b class="queue-applicant">${esc(app.name)}</b></td>
+      <td data-label="Loan" class="mono">${money(app.loanAmount)}</td>
+      <td data-label="Status">${tag(app.status)}</td>
+      <td data-label="Risk"><span class="queue-risk"><span class="tag ${riskClass}">${result.level}</span><b class="mono">${result.score}</b></span></td>
+      <td data-label="Action" class="queue-action">${button(OFFICER_ACTION_LABELS[app.status] || 'View case', 'navigate', 'sm pri', `data-route="#/case/${app.id}"`)}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="officer-page officer-queue-page" aria-labelledby="officer-queue-title">
+    <header class="officer-page-header">
+      <div><p class="eyebrow">LOAN OPERATIONS</p><h1 id="officer-queue-title">Officer queue</h1>
+        <p>Prioritize applications, inspect risk evidence, and record accountable decisions.</p></div>
+      ${button('Audit records', 'navigate', 'officer-secondary', 'data-route="#/audit"')}
+    </header>
+    <section class="officer-stats" aria-label="Case summary">
+      <article class="officer-stat stat-all"><span class="officer-stat-mark" aria-hidden="true"></span><div><strong class="mono">${apps.length}</strong><b>All cases</b><span>Across every status</span></div></article>
+      <article class="officer-stat stat-open"><span class="officer-stat-mark" aria-hidden="true"></span><div><strong class="mono">${pending}</strong><b>Open cases</b><span>Require follow-up</span></div></article>
+      <article class="officer-stat stat-approved"><span class="officer-stat-mark" aria-hidden="true"></span><div><strong class="mono">${apps.filter(app => app.status === 'approved').length}</strong><b>Approved</b><span>Final decisions</span></div></article>
+      <article class="officer-stat stat-rejected"><span class="officer-stat-mark" aria-hidden="true"></span><div><strong class="mono">${apps.filter(app => app.status === 'rejected').length}</strong><b>Rejected</b><span>Final decisions</span></div></article>
+    </section>
+    <section class="officer-workspace" aria-labelledby="case-list-title">
+      <div class="officer-workspace-heading"><div><p class="eyebrow">REVIEW WORKSPACE</p><h2 id="case-list-title">Applications</h2>
+        <p>${assessed.length} of ${apps.length} cases shown${activeFilters ? ` · ${activeFilters} active filter${activeFilters > 1 ? 's' : ''}` : ''}</p></div></div>
+      <div class="queue-filters" role="search" aria-label="Filter officer queue">
+        <label class="queue-search"><span class="sr">Search application ID or applicant</span>
+          <input id="queue-keyword" placeholder="Search application ID or applicant" value="${esc(query.kw)}"></label>
+        <label><span class="sr">Filter by status</span><select id="queue-status"><option value="">All statuses</option>${Object.entries(STATUS).map(([key, value]) => `<option value="${key}" ${query.status === key ? 'selected' : ''}>${value.label}</option>`).join('')}</select></label>
+        <label><span class="sr">Filter by risk band</span><select id="queue-level"><option value="">All risk bands</option>${['Low', 'Medium', 'High'].map(level => `<option ${query.level === level ? 'selected' : ''}>${level}</option>`).join('')}</select></label>
+        ${button('Apply filters', 'filter-queue', 'pri queue-filter-button')}
+      </div>
+      <div class="queue-table-wrap"><table class="queue-table"><thead><tr><th>Application</th><th>Applicant</th><th>Loan</th><th>Status</th><th>Risk / score</th><th>Action</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="6"><div class="queue-empty"><b>No matching cases</b><span>Try changing the search term or filters.</span></div></td></tr>`}</tbody></table></div>
+    </section>
+  </section>`;
 }
 
 const PROFILE_FIELDS = [
@@ -537,11 +639,19 @@ const PROFILE_FIELDS = [
 const MONEY_FIELDS = new Set(['incomeDeclared', 'incomeVerified', 'existingMonthly', 'outstanding', 'carPrice', 'omv', 'downPayment', 'loanAmount']);
 
 function profileHtml(app) {
-  return `<div class="fgroup"><b>Verified applicant profile</b>${PROFILE_FIELDS.map(([key, label, source, model]) => {
+  const sourceState = source => {
+    if (source === 'Applicant') return ['Self-declared', 'declared'];
+    if (source === 'MyInfo') return [app.myinfoPulled ? 'Verified' : 'Not retrieved', app.myinfoPulled ? 'verified' : 'pending'];
+    if (source === 'CPF Sandbox') return [(app.cpfPulled || n(app.incomeVerified) > 0) ? 'Verified' : 'Not retrieved', (app.cpfPulled || n(app.incomeVerified) > 0) ? 'verified' : 'pending'];
+    if (source === 'Credit Sandbox') return [app.creditPulled ? 'Verified' : 'Not retrieved', app.creditPulled ? 'verified' : 'pending'];
+    return ['Reference', 'pending'];
+  };
+  return `<div class="fgroup profile-group"><b>Applicant data and provenance</b>${PROFILE_FIELDS.map(([key, label, source, model]) => {
     const value = MONEY_FIELDS.has(key) ? money(app[key]) : key === 'tenureYears' ? `${esc(app[key])} years` : esc(app[key] || '—');
+    const [stateLabel, stateClass] = sourceState(source);
     return `<div class="frow" id="f_${key}"><div class="k">${label}</div><div class="v ${MONEY_FIELDS.has(key) ? 'mono' : ''}">${value}</div>
-      <div><span class="chip">${source}</span><span class="chip ok">Verified</span><span class="chip ${model ? 'ok' : 'ref'}">${model ? 'Used by model' : 'Verification only'}</span></div></div>`;
-  }).join('')}</div>${button('View original submission', 'show-original', 'sm')}`;
+      <div class="chips"><span class="chip">${source}</span><span class="chip ${stateClass}">${stateLabel}</span><span class="chip ${model ? 'model' : 'ref'}">${model ? 'Used in assessment' : 'Reference only'}</span></div></div>`;
+  }).join('')}</div><div class="profile-actions">${button('View original submission', 'show-original', 'sm')}</div>`;
 }
 
 function checksHtml(app, result, allApps) {
@@ -562,54 +672,114 @@ function checksHtml(app, result, allApps) {
     <div class="fgroup"><b>Key metrics</b><div class="chk"><span>LTV</span><span class="mono">${pct(metrics.ltv)} / ${pct(metrics.cap)} cap</span></div>
       <div class="chk"><span>Debt service ratio</span><span class="mono">${pct(metrics.dsr)}</span></div><div class="chk"><span>Estimated monthly payment</span><span class="mono">${money(metrics.monthly)}</span></div></div>
     <div class="fgroup"><b>Triggered rules</b>
-      ${result.hard.map(item => `<div class="note bad" style="margin:6px 0"><span class="mono">${item.rule}</span> ${item.text}</div>`).join('')}
-      ${result.rules.length ? result.rules.map(rule => `<div class="chk"><span class="mono" style="font-size:12px">${rule}</span></div>`).join('') : '<div class="muted">No scoring rules were triggered.</div>'}</div>`;
+      ${result.hard.map(item => `<div class="note bad officer-rule"><b>${esc(readableRule(item.rule))}</b><span>${esc(item.text)}</span></div>`).join('')}
+      ${result.rules.length ? result.rules.map(rule => `<div class="chk officer-rule-row"><span>${esc(readableRule(rule))}</span></div>`).join('') : '<div class="muted">No scoring rules were triggered.</div>'}</div>`;
 }
 
 function decisionHtml(app, result) {
   const max = Math.max(...result.factors.map(item => item.score), 1);
   const color = result.level === 'High' ? 'var(--bad)' : result.level === 'Medium' ? 'var(--warn)' : 'var(--ok)';
   const locked = ['approved', 'rejected'].includes(app.status);
-  return `<div class="score"><span class="n" style="color:${color}">${result.score}</span><span class="sub">/ 100 · Risk band <b>${result.level}</b></span></div>
-    <p class="muted mono">Model ${result.modelVersion} · Deterministic and reproducible</p><div class="hr"></div>
+  const canDecide = app.status === 'reviewing';
+  const unavailableMessage = {
+    draft: 'This draft has not been submitted for assessment.',
+    submitted: 'This application has been submitted but is not yet under active review.',
+    need_info: 'A request is with the applicant. Continue the decision after supplementary information is submitted.'
+  }[app.status] || 'A human decision is not available for the current status.';
+  return `<div class="assessment-summary"><div class="score"><span class="n" style="color:${color}">${result.score}</span><span class="sub">/ 100</span></div>
+      <div><span class="assessment-band-label">Risk band</span><span class="tag ${result.level === 'Low' ? 't-ok' : result.level === 'High' ? 't-bad' : 't-warn'}">${result.level}</span></div></div>
+    <p class="muted model-version">Model ${esc(result.modelVersion)} · Deterministic and reproducible</p><div class="hr"></div>
     <b class="section-label">Primary risk factors (select to inspect evidence)</b>
-    <div style="margin-top:10px">${result.factors.length ? result.factors.map(item => `<button class="bar" data-action="highlight-fields" data-fields="${item.fields.join(',')}">
-      <span class="lb"><span>${item.label}</span><span class="mono">+${item.score}</span></span><span class="track"><span class="fill" style="width:${Math.round(item.score / max * 100)}%"></span></span></button>`).join('') : '<p class="muted">No risk factors were triggered beyond the base score.</p>'}</div>
-    ${result.questions.length ? `<div class="fgroup"><b>Questions to verify</b>${result.questions.map(question => `<div class="chk"><span>· ${question}</span></div>`).join('')}</div>` : ''}
-    <div class="note"><b>AI processing recommendation: ${result.recommendation}</b><br>The model advises only. A loan officer must confirm and record the final decision.</div>
+    <div class="risk-factors">${result.factors.length ? result.factors.map(item => `<button class="bar" data-action="highlight-fields" data-fields="${item.fields.join(',')}">
+      <span class="lb"><span>${esc(readableRiskText(item.label))}</span><span class="mono">+${item.score}</span></span><span class="track"><span class="fill" style="width:${Math.round(item.score / max * 100)}%"></span></span></button>`).join('') : '<p class="muted">No risk factors were triggered beyond the base score.</p>'}</div>
+    ${result.questions.length ? `<div class="fgroup verification-questions"><b>Questions to verify</b>${result.questions.map(question => `<div class="chk"><span>${esc(readableRiskText(question))}</span></div>`).join('')}</div>` : ''}
+    <div class="note recommendation-note"><span class="recommendation-kicker">Model recommendation</span><b>${esc(result.recommendation)}</b><p>The model provides advice only. The loan officer remains responsible for the final decision.</p></div>
     <details style="margin:12px 0"><summary class="btn sm">Adjust parameters and rerun</summary><div style="margin-top:12px">
       <label class="f"><span>Down payment (S$)</span><input id="s-down" type="number" value="${n(app.downPayment)}"></label>
       <label class="f"><span>Verified monthly income (S$)</span><input id="s-income" type="number" value="${n(app.incomeVerified)}"></label>
       ${button('Recalculate', 'rerun-risk', 'sm', `data-id="${app.id}"`)}<div id="rerun-output" style="margin-top:10px"></div></div></details>
-    <div class="hr thick"></div><b class="section-label">Human decision</b>
+    <div class="hr thick"></div><div class="human-decision-heading"><div><b class="section-label">Human decision</b><span>Officer-owned outcome</span></div></div>
     ${locked ? `<div class="note ${app.status === 'rejected' ? 'bad' : ''}" style="margin-top:10px"><b>Completed: ${app.decision}</b><br>${esc(app.officerNote)}</div>` :
-    `<div class="btnrow" style="margin:12px 0">${button('Approve', 'pick-decision', 'ok', 'data-decision="Approve"')}
+    canDecide ? `<div class="btnrow decision-options">${button('Approve', 'pick-decision', 'ok', 'data-decision="Approve"')}
       ${button('Request information', 'pick-decision', 'warn', 'data-decision="Request Info"')}${button('Reject', 'pick-decision', 'bad', 'data-decision="Reject"')}</div>
       <label class="f"><span>Officer rationale (required)</span><textarea id="officer-note" placeholder="Explain why you accept or adjust the model recommendation"></textarea></label>
       <p class="muted" id="decision-info">No action selected.</p>
-      ${button('Submit final action', 'commit-decision', 'pri', `data-id="${app.id}" disabled`)}`}`;
+      ${button('Submit final action', 'commit-decision', 'pri decision-submit', `data-id="${app.id}" disabled`)}` :
+    `<div class="note warn decision-unavailable"><b>Decision controls unavailable</b><p>${esc(unavailableMessage)}</p></div>`}`;
 }
 
 export function caseView(app, result, allApps) {
-  return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px"><div><h1>Case review</h1><p class="sub mono">${app.id} · ${esc(app.name)}</p></div>
-    <span style="flex:1"></span>${tag(app.status)}${button('Back to queue', 'navigate', '', 'data-route="#/queue"')}${button('Audit records', 'navigate', '', 'data-route="#/audit"')}</div>
-    <div class="cols"><section class="col"><div class="colhd"><b>1 · Verified profile</b><div class="muted">Facts and source provenance</div></div><div class="colbd">${profileHtml(app)}</div></section>
-      <section class="col"><div class="colhd"><b>2 · Automated checks</b><div class="muted">Completeness, consistency, and rules</div></div><div class="colbd">${checksHtml(app, result, allApps)}</div></section>
-      <section class="col"><div class="colhd"><b>3 · Assessment & decision</b><div class="muted">Model advice separated from human judgment</div></div><div class="colbd">${decisionHtml(app, result)}</div></section></div>`;
+  return `<section class="officer-page officer-case-page" aria-labelledby="case-review-title">
+    <div class="officer-case-nav">${button('Back to queue', 'navigate', 'officer-back', 'data-route="#/queue"')}
+      <div>${button('Audit records', 'navigate', 'officer-secondary', 'data-route="#/audit"')}</div></div>
+    <header class="case-page-header"><div><p class="eyebrow">CASE REVIEW</p><h1 id="case-review-title">${esc(app.name)}</h1>
+      <p><span class="mono">${app.id}</span> · Evidence-led assessment and human decision workspace</p></div>
+      <div class="case-status">${tag(app.status)}</div></header>
+    <div class="cols officer-case-cols">
+      <section class="col officer-col officer-profile-col"><div class="colhd"><span class="col-step">1</span><div><b>Applicant profile</b><span>Facts, sources, and assessment use</span></div></div><div class="colbd">${profileHtml(app)}</div></section>
+      <section class="col officer-col officer-checks-col"><div class="colhd"><span class="col-step">2</span><div><b>Automated checks</b><span>Completeness, consistency, and rules</span></div></div><div class="colbd">${checksHtml(app, result, allApps)}</div></section>
+      <section class="col officer-col officer-decision-col"><div class="colhd"><span class="col-step">3</span><div><b>Assessment &amp; decision</b><span>Model advice separated from human judgment</span></div></div><div class="colbd">${decisionHtml(app, result)}</div></section>
+    </div>
+  </section>`;
 }
 
+const AUDIT_ACTIONS = {
+  draft_created: ['Draft created', 't-gray'],
+  draft_saved: ['Draft saved', 't-gray'],
+  created: ['Application created', 't-gray'],
+  submitted: ['Application submitted', 't-blue'],
+  information_retrieved: ['Information retrieved', 't-blue'],
+  risk_assessed: ['Risk assessed', 't-blue'],
+  approved: ['Application approved', 't-ok'],
+  rejected: ['Application rejected', 't-bad'],
+  information_requested: ['Information requested', 't-warn'],
+  information_submitted: ['Information submitted', 't-blue'],
+  demo_reset: ['Demo reset', 't-gray']
+};
+
 export function auditView(logs) {
-  const rows = logs.slice().sort((a, b) => b.ts - a.ts).map(item => `<tr><td class="mono">${fmtTime(item.ts)}</td><td class="mono">${item.appId}</td>
-    <td><span class="tag t-gray">${item.action}</span></td><td>${item.actor}</td><td class="mono muted">${item.modelVersion}</td><td>${esc(item.note)}</td></tr>`).join('');
-  return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px"><div><h1>Audit records</h1><p class="sub">Chronological, versioned workflow history</p></div>
-    <span style="flex:1"></span>${button('Export CSV', 'export-audit')}${button('Back to queue', 'navigate', '', 'data-route="#/queue"')}</div>
-    <div class="card"><table><thead><tr><th>Time</th><th>Application ID</th><th>Action</th><th>Actor</th><th>Model version</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const sorted = logs.slice().sort((a, b) => b.ts - a.ts);
+  const applications = new Set(logs.map(item => item.appId).filter(Boolean)).size;
+  const rows = sorted.map(item => {
+    const actionKey = item.actionCode || item.action;
+    const [label, className] = AUDIT_ACTIONS[actionKey] || [readableRiskText(item.action), 't-gray'];
+    return `<tr>
+      <td data-label="Time"><span class="mono audit-time">${fmtTime(item.ts)}</span></td>
+      <td data-label="Application"><span class="mono audit-app">${esc(item.appId || '—')}</span></td>
+      <td data-label="Event"><span class="tag ${className}">${esc(label)}</span></td>
+      <td data-label="Actor">${esc(item.actor || 'System')}</td>
+      <td data-label="Model"><span class="mono muted">${esc(item.modelVersion || '—')}</span></td>
+      <td data-label="Details" class="audit-note">${esc(item.details || item.note || 'No additional details.')}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="audit-page" aria-labelledby="audit-title">
+    <div class="audit-nav">${button('Back to queue', 'navigate', 'audit-back', 'data-route="#/queue"')}</div>
+    <header class="audit-header"><div><p class="eyebrow">GOVERNANCE &amp; TRACEABILITY</p><h1 id="audit-title">Audit records</h1>
+      <p>Chronological, versioned history of automated processing and human decisions.</p></div>
+      ${button('Export CSV', 'export-audit', 'pri audit-export')}</header>
+    <section class="audit-summary" aria-label="Audit summary">
+      <div><span>Recorded events</span><b class="mono">${logs.length}</b></div>
+      <div><span>Applications represented</span><b class="mono">${applications}</b></div>
+      <div><span>Latest activity</span><b class="mono audit-latest">${sorted[0]?.ts ? fmtTime(sorted[0].ts) : '—'}</b></div>
+    </section>
+    <section class="audit-card" aria-labelledby="audit-history-title">
+      <div class="audit-card-heading"><div><p class="eyebrow">EVENT HISTORY</p><h2 id="audit-history-title">Recorded activity</h2></div>
+        <span>${logs.length} event${logs.length === 1 ? '' : 's'}</span></div>
+      ${rows ? `<div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>Time</th><th>Application</th><th>Event</th><th>Actor</th><th>Model</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<div class="audit-empty"><span class="audit-empty-mark" aria-hidden="true"></span><h2>No audit records yet</h2><p>Activity will appear here after an application enters the workflow.</p></div>`}
+    </section>
+    <p class="audit-prototype-note">Synthetic demonstration records · Exported data is for educational use only.</p>
+  </section>`;
 }
 
 export function notFoundView() {
-  return `<div class="card"><h1>Page not found</h1><p>The requested route does not exist.</p>${button('Return home', 'navigate', 'pri', 'data-route="#/"')}</div>`;
+  return `<section class="system-state" aria-labelledby="not-found-title"><span class="system-state-code mono">404</span>
+    <div class="system-state-mark" aria-hidden="true"></div><p class="eyebrow">PAGE NOT FOUND</p><h1 id="not-found-title">This page is not available</h1>
+    <p>The address may be incorrect, or the page may have moved within the demo.</p>${button('Return home', 'navigate', 'pri', 'data-route="#/"')}</section>`;
 }
 
 export function unauthorizedView() {
-  return `<div class="card"><h1>Sign in required</h1><p>Please choose the appropriate role before opening this page.</p>${button('Choose role', 'navigate', 'pri', 'data-route="#/"')}</div>`;
+  return `<section class="system-state" aria-labelledby="sign-in-required-title"><span class="system-state-code mono">401</span>
+    <div class="system-state-mark system-state-lock" aria-hidden="true"></div><p class="eyebrow">AUTHENTICATION REQUIRED</p><h1 id="sign-in-required-title">Sign in to continue</h1>
+    <p>Choose the appropriate portal and use its demo account before opening this page.</p>${button('Choose a portal', 'navigate', 'pri', 'data-route="#/"')}</section>`;
 }
