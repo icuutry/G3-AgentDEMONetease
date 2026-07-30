@@ -360,9 +360,9 @@ try {
     $frontendProcess = Start-Process `
         -FilePath $pythonExe `
         -ArgumentList @(
-            $frontendServer,
+            ('"{0}"' -f $frontendServer),
             '--directory',
-            $frontendDirectory,
+            ('"{0}"' -f $frontendDirectory),
             '--bind',
             '127.0.0.1',
             '--port',
