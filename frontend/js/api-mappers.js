@@ -46,6 +46,10 @@ const NUMERIC_APPLICATION_FIELDS = new Set([
   'tenureYears'
 ]);
 
+const NULLABLE_NUMERIC_APPLICATION_FIELDS = new Set(
+  [...NUMERIC_APPLICATION_FIELDS].filter(field => field !== 'tenureYears')
+);
+
 const LEVELS = {
   low: 'Low',
   medium: 'Medium',
@@ -96,8 +100,8 @@ export function serializeApplication(payload = {}, { patch = false } = {}) {
     const value = payload[field];
     if (value === undefined) continue;
     if (
-      patch
-      && NUMERIC_APPLICATION_FIELDS.has(field)
+      NUMERIC_APPLICATION_FIELDS.has(field)
+      && !NULLABLE_NUMERIC_APPLICATION_FIELDS.has(field)
       && (value === null || (typeof value === 'string' && value.trim() === ''))
     ) {
       continue;

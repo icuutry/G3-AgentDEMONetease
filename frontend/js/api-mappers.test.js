@@ -19,23 +19,99 @@ import {
   updateApplication
 } from './api.js';
 
+const nullableNumericApplicationFields = [
+  'age',
+  'empMonths',
+  'incomeDeclared',
+  'incomeVerified',
+  'existingMonthly',
+  'outstanding',
+  'latePayments',
+  'otherLoans',
+  'carPrice',
+  'omv',
+  'carAge',
+  'downPayment',
+  'loanAmount'
+];
+
+for (const field of nullableNumericApplicationFields) {
+  for (const clearedValue of [null, '', '   ']) {
+    assert.deepEqual(
+      serializeApplication({ [field]: clearedValue }, { patch: true }),
+      { [field]: null },
+      `${field} should serialize a cleared PATCH value as null`
+    );
+  }
+
+  assert.deepEqual(
+    serializeApplication({ [field]: undefined }, { patch: true }),
+    {},
+    `${field} should omit an undefined PATCH value`
+  );
+}
+
+const tenurePatchCases = [
+  [null, {}],
+  ['', {}],
+  ['   ', {}],
+  [undefined, {}],
+  ['5', { tenureYears: 5 }],
+  [5, { tenureYears: 5 }],
+  ['0', { tenureYears: 0 }],
+  ['not-a-number', { tenureYears: 'not-a-number' }]
+];
+
+for (const [value, expected] of tenurePatchCases) {
+  assert.deepEqual(
+    serializeApplication({ tenureYears: value }, { patch: true }),
+    expected,
+    `tenureYears PATCH serialization should handle ${String(value)}`
+  );
+}
+
+const tenureCreateCases = [
+  [null, {}],
+  ['', {}],
+  ['   ', {}],
+  [undefined, {}],
+  ['5', { tenureYears: 5 }]
+];
+
+for (const [value, expected] of tenureCreateCases) {
+  assert.deepEqual(
+    serializeApplication({ tenureYears: value }),
+    expected,
+    `tenureYears create serialization should handle ${String(value)}`
+  );
+}
+
 const patch = serializeApplication({
-  age: '',
-  empMonths: '   ',
-  incomeDeclared: null,
-  incomeVerified: undefined,
+  age: undefined,
+  incomeDeclared: '1234.56',
+  incomeVerified: 'not-a-number',
   existingMonthly: '0',
+  carPrice: 12.5,
   latePayments: 0,
   consent: false,
   cpfPulled: false,
+  name: '',
+  employer: '',
+  residency: 'Singapore Citizen',
   unknownField: 'excluded'
 }, { patch: true });
 
 assert.deepEqual(patch, {
   consent: false,
   cpfPulled: false,
+  name: '',
+  residency: 'Singapore Citizen',
+  employer: '',
+  incomeDeclared: 1234.56,
+  incomeVerified: 'not-a-number',
   existingMonthly: 0,
-  latePayments: 0
+  latePayments: 0,
+  carPrice: 12.5
 });
 
 const create = serializeApplication({
@@ -168,12 +244,13 @@ await updateApplication('APP/1', {
   cpfPulled: false,
   employer: '',
   incomeDeclared: ' ',
-  existingMonthly: 0
+  existingMonthly: 0,
+  tenureYears: ' '
 });
 assert.deepEqual(lastRequest(), {
   method: 'PATCH',
   path: '/applications/APP%2F1',
-  body: { cpfPulled: false, employer: '', existingMonthly: 0 }
+  body: { cpfPulled: false, employer: '', incomeDeclared: null, existingMonthly: 0 }
 });
 
 queueJson(applicationResponse, 201);
